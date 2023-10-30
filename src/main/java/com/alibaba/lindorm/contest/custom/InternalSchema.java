@@ -4,13 +4,16 @@ import com.alibaba.lindorm.contest.structs.ColumnValue;
 import com.alibaba.lindorm.contest.structs.Schema;
 
 import java.io.Serializable;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 与Schema相比,InternalSchema中的列是有固定顺序的.支持序列化
  */
 public class InternalSchema implements Serializable {
     private final Map<String, ColumnValue.ColumnType> columnTypeMap;
+    private final Map<String, Integer> columnOffset;
     public final String[] colNames;
     public final ColumnValue.ColumnType[] columnTypes;
     public final int columnCount;
@@ -23,29 +26,37 @@ public class InternalSchema implements Serializable {
 
     private InternalSchema(Map<String, ColumnValue.ColumnType> columnTypeMap){
         this.columnTypeMap = columnTypeMap;
+        columnOffset = new HashMap<>();
         columnCount = columnTypeMap.size();
         colNames = new String[columnCount];
         columnTypes = new ColumnValue.ColumnType[columnCount];
-        int len = 0;
+        int offset = Byte.BYTES+Short.BYTES;
         int i = 0;
         int int_count = 0,double_count = 0,string_count = 0;
         for(var entry: columnTypeMap.entrySet()){
             colNames[i] = entry.getKey();
             columnTypes[i] = entry.getValue();
+            columnOffset.put(colNames[i],offset);
             switch (columnTypes[i]){
                 case COLUMN_TYPE_INTEGER:
-                    int_count++;break;
+                    int_count++;
+                    offset+=Integer.BYTES;
+                    break;
                 case COLUMN_TYPE_DOUBLE_FLOAT:
-                    double_count++;break;
+                    double_count++;
+                    offset+=Double.BYTES;
+                    break;
                 case COLUMN_TYPE_STRING:
-                    string_count++;break;
+                    string_count++;
+                    offset+=2*Integer.BYTES;
+                    break;
             }
             ++i;
         }
         intCount = int_count;
         doubleCount = double_count;
         stringCount = string_count;
-        rawLength = intCount*4+doubleCount*8+stringCount*8;
+        rawLength = Byte.BYTES+Short.BYTES+intCount*Integer.BYTES+doubleCount*Double.BYTES+stringCount*(2*Integer.BYTES);
     }
 
     public static InternalSchema build(Schema schema){
@@ -54,5 +65,17 @@ public class InternalSchema implements Serializable {
 
     public static InternalSchema build(Map<String, ColumnValue.ColumnType> columnTypeMap){
         return new InternalSchema(columnTypeMap);
+    }
+    public ColumnValue.ColumnType getType(String colName){
+        return columnTypeMap.get(colName);
+    }
+    public Set<String> getColumnNames(){
+        return columnTypeMap.keySet();
+    }
+    public int getOffset(String colName){
+        if(!columnOffset.containsKey(colName)){
+            return -1;
+        }
+        return columnOffset.get(colName);
     }
 }
