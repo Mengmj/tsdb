@@ -9,4 +9,11 @@ public class CommonUtils {
     public static long getPartition(long timestamp){
         return timestamp / (PARTITION_SECONDS*1000);
     }
+
+    public static long getPartitionBegin(long partition){
+        return partition * PARTITION_SECONDS * 1000;
+    }
+    public static long getPartitionEnd(long partition){
+        return (partition+1) * PARTITION_SECONDS * 1000;
+    }
 }

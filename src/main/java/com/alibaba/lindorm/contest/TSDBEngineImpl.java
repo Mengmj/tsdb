@@ -9,20 +9,18 @@ package com.alibaba.lindorm.contest;
 
 import com.alibaba.lindorm.contest.custom.FileKey;
 import com.alibaba.lindorm.contest.custom.InternalSchema;
+import com.alibaba.lindorm.contest.custom.RowWrapped;
 import com.alibaba.lindorm.contest.custom.RowWritable;
 import com.alibaba.lindorm.contest.manager.IdManager;
 import com.alibaba.lindorm.contest.manager.LatestRowManager;
 import com.alibaba.lindorm.contest.manager.TSDBFileSystem;
 import com.alibaba.lindorm.contest.structs.*;
+import com.alibaba.lindorm.contest.task.ReadTask;
+import com.alibaba.lindorm.contest.task.WriteTask;
 
 import java.io.*;
 import java.util.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.*;
 
 public class TSDBEngineImpl extends TSDBEngine {
   String tableName;
@@ -30,6 +28,7 @@ public class TSDBEngineImpl extends TSDBEngine {
   private TSDBFileSystem fileSystem;
   private IdManager idManager;
   private LatestRowManager latestRowManager;
+  private ExecutorService WRPool;
 
   
   /**
@@ -41,6 +40,7 @@ public class TSDBEngineImpl extends TSDBEngine {
     super(dataPath);
     fileSystem = TSDBFileSystem.getInstance(dataPath);
     tableName = fileSystem.tableName;
+    WRPool = Executors.newFixedThreadPool(8);
   }
 
   /**
@@ -92,22 +92,31 @@ public class TSDBEngineImpl extends TSDBEngine {
     if(wReq.getTableName()!=tableName){
       return;
     }
-    Map<FileKey,Row>
+    Map<FileKey,List<RowWrapped>> rowListMap = new HashMap<>();
     for(Row row:wReq.getRows()){
       int id = idManager.getId(row.getVin(),true);
       latestRowManager.upsert(row);
-      FileKey fileKey = FileKey.build(id,row.getTimestamp());
-
+      FileKey fileKey = FileKey.buildFromTimestamp(id,row.getTimestamp());
+      if(!rowListMap.containsKey(fileKey)){
+        rowListMap.put(fileKey,new ArrayList<>());
+      }
+      rowListMap.get(fileKey).add(RowWrapped.wrap(id,row));
     }
-
+    Future<?> result = WRPool.submit(new WriteTask(fileSystem,rowListMap));
+    try{
+      result.get();
+    }catch (Exception e){
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
   public ArrayList<Row> executeLatestQuery(LatestQueryRequest pReadReq) throws IOException {
     ArrayList<Row> retList = new ArrayList<>();
     for(Vin vin : pReadReq.getVins()){
-      if(rowCache.containsKey(vin)){
-        retList.add(filterColumns(rowCache.get(vin).getRow(schema),pReadReq.getRequestedColumns()));
+      Row row = latestRowManager.getLatestRow(vin);
+      if(row!=null){
+        retList.add(filterColumns(row,pReadReq.getRequestedColumns()));
       }
     }
     return retList;
@@ -115,7 +124,18 @@ public class TSDBEngineImpl extends TSDBEngine {
 
   @Override
   public ArrayList<Row> executeTimeRangeQuery(TimeRangeQueryRequest trReadReq) throws IOException {
-    return null;
+    ArrayList<Row> ret;
+    int id = idManager.getId(trReadReq.getVin(),false);
+    if(id == -1){
+      return null;
+    }
+    Future<ArrayList<Row>> future = WRPool.submit(new ReadTask(fileSystem,trReadReq.getVin(),id, trReadReq.getTimeLowerBound(), trReadReq.getTimeUpperBound(), trReadReq.getRequestedColumns()));
+    try {
+      ret = future.get();
+    }catch (Exception e){
+      throw new RuntimeException(e);
+    }
+    return ret;
   }
 
   @Override public ArrayList<Row> executeAggregateQuery(TimeRangeAggregationRequest aggregationReq) throws IOException {

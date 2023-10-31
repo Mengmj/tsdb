@@ -5,12 +5,15 @@ import com.alibaba.lindorm.contest.CommonUtils;
 public class FileKey {
     public final long partition;
     public final int buckle;
-    private FileKey(int id,long timestamp){
-        partition = CommonUtils.getPartition(timestamp);
-        buckle = CommonUtils.getBuckle(id);
+    private FileKey(int buckle,long partition){
+        this.partition = partition;
+        this.buckle = buckle;
     }
-    public static FileKey build(int id,long timestamp){
-        return new FileKey(id,timestamp);
+    public static FileKey buildFromTimestamp(int id, long timestamp){
+        return new FileKey(CommonUtils.getBuckle(id),CommonUtils.getPartition(timestamp));
+    }
+    public static FileKey buildFromPartition(int id, long partition){
+        return new FileKey(CommonUtils.getBuckle(id),partition);
     }
 
     @Override

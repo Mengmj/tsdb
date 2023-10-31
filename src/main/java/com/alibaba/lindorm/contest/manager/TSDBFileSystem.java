@@ -1,6 +1,7 @@
 package com.alibaba.lindorm.contest.manager;
 
 import com.alibaba.lindorm.contest.CommonUtils;
+import com.alibaba.lindorm.contest.custom.FileKey;
 import com.alibaba.lindorm.contest.custom.InternalSchema;
 import com.alibaba.lindorm.contest.custom.MappedFile;
 import com.alibaba.lindorm.contest.structs.Schema;
@@ -68,8 +69,8 @@ public class TSDBFileSystem {
     public void setSchema(InternalSchema schema){
         this.schema = schema;
     }
-    public MappedFile getMappedFile(long partition, int buckle,boolean allocate){
-        File file = getFile(partition,buckle,allocate);
+    public MappedFile getMappedFile(FileKey fileKey, boolean allocate){
+        File file = getFile(fileKey,allocate);
         if(!file.exists()){
             return null;
         }
@@ -113,7 +114,7 @@ public class TSDBFileSystem {
                 }
                 refCount[next].set(1);
                 bufferIndex.put(file.getName(), next);
-                bufferPool[next] = MappedFile.getInstance(file,partition,buckle, schema);
+                bufferPool[next] = MappedFile.getInstance(file,fileKey, schema);
                 ret = bufferPool[next];
                 next = (next+1)%BUFFER_POOL_SIZE;
             }
@@ -130,9 +131,9 @@ public class TSDBFileSystem {
             zeroRef.incrementAndGet();
         }
     }
-    public File getFile(long partition,int buckle,boolean allocate) {
-        File partitionDir = new File(dataPath, String.valueOf(partition));
-        File file = new File(partitionDir, String.valueOf(buckle));
+    public File getFile(FileKey fileKey,boolean allocate) {
+        File partitionDir = new File(dataPath, String.valueOf(fileKey.partition));
+        File file = new File(partitionDir, String.valueOf(fileKey.buckle));
         if (allocate) {
             if (!partitionDir.exists()) {
                 partitionDir.mkdirs();

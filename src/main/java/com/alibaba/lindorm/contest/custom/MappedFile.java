@@ -13,10 +13,7 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MappedFile {
@@ -48,19 +45,14 @@ public class MappedFile {
         }
 
     }
-    public static MappedFile getInstance(File file,long partition,int buckle,InternalSchema schema){
-        return new MappedFile(file,partition,buckle,schema);
+    public static MappedFile getInstance(File file,FileKey fileKey,InternalSchema schema){
+        return new MappedFile(file,fileKey.partition,fileKey.buckle,schema);
     }
 
-    public void writeRows(ArrayList<Integer> ids, ArrayList<Row> rows){
-        int n = ids.size();
-        if(ids.size()!=rows.size()){
-            LogUtils.error("ids.size()!=rows.size()");
-            throw new RuntimeException("ids.size()!=rows.size()");
-        }
-        for(int i = 0;i < n;++i){
-            int id = ids.get(i);
-            Row row = rows.get(i);
+    public void writeRows(List<RowWrapped> rows){
+        for(RowWrapped rowWrapped: rows){
+            int id = rowWrapped.id;
+            Row row = rowWrapped.row;
             int second = getSecond(row.getTimestamp());
             int rowBegin = getRowBegin(id,second);
             int offset = rowBegin+1;
@@ -167,5 +159,39 @@ public class MappedFile {
     }
     private long getTimestamp(int second,short milli){
         return partition * CommonUtils.PARTITION_SECONDS*1000+second*1000 + milli;
+    }
+
+    public AggResult aggColumn(int id,String colName,long timeLowerBound,long timeUpperBound){
+        int colOffset = schema.getOffset(colName);
+        ColumnValue.ColumnType colType = schema.getType(colName);
+        AggResult aggResult = new AggResult(colType);
+        int beginSecond = getSecond(timeLowerBound);
+        int endSecond = getSecond(timeUpperBound-1);
+        TestUtils.check(beginSecond <= endSecond);
+        for(int second = beginSecond;second <= endSecond;++second){
+            int rowBegin = getRowBegin(id,second);
+            byte flag = mbb.get(rowBegin);
+            short milli = mbb.getShort(rowBegin+1);
+            if(flag!=0){
+                long timestamp = getTimestamp(second,milli);
+                if(second == beginSecond && timestamp < timeLowerBound){
+                    continue;
+                }
+                if(second == endSecond && timestamp >= timeUpperBound){
+                    continue;
+                }
+                switch (colType){
+                    case COLUMN_TYPE_INTEGER:
+                        aggResult.addInt(mbb.getInt(rowBegin+colOffset));
+                        break;
+                    case COLUMN_TYPE_DOUBLE_FLOAT:
+                        aggResult.addDouble(mbb.getDouble(rowBegin+colOffset));
+                        break;
+                    default:
+                        throw new RuntimeException("not supported type for aggregation");
+                }
+            }
+        }
+        return aggResult;
     }
 }
