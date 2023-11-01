@@ -7,14 +7,12 @@
 
 package com.alibaba.lindorm.contest;
 
-import com.alibaba.lindorm.contest.custom.FileKey;
-import com.alibaba.lindorm.contest.custom.InternalSchema;
-import com.alibaba.lindorm.contest.custom.RowWrapped;
-import com.alibaba.lindorm.contest.custom.RowWritable;
+import com.alibaba.lindorm.contest.custom.*;
 import com.alibaba.lindorm.contest.manager.IdManager;
 import com.alibaba.lindorm.contest.manager.LatestRowManager;
 import com.alibaba.lindorm.contest.manager.TSDBFileSystem;
 import com.alibaba.lindorm.contest.structs.*;
+import com.alibaba.lindorm.contest.task.AggTask;
 import com.alibaba.lindorm.contest.task.ReadTask;
 import com.alibaba.lindorm.contest.task.WriteTask;
 
@@ -89,7 +87,7 @@ public class TSDBEngineImpl extends TSDBEngine {
    */
   @Override
   public void write(WriteRequest wReq) throws IOException {
-    if(wReq.getTableName()!=tableName){
+    if(!wReq.getTableName().equals(tableName)){
       return;
     }
     Map<FileKey,List<RowWrapped>> rowListMap = new HashMap<>();
@@ -112,6 +110,9 @@ public class TSDBEngineImpl extends TSDBEngine {
 
   @Override
   public ArrayList<Row> executeLatestQuery(LatestQueryRequest pReadReq) throws IOException {
+    if(!pReadReq.getTableName().equals(tableName)){
+      return new ArrayList<>();
+    }
     ArrayList<Row> retList = new ArrayList<>();
     for(Vin vin : pReadReq.getVins()){
       Row row = latestRowManager.getLatestRow(vin);
@@ -124,11 +125,14 @@ public class TSDBEngineImpl extends TSDBEngine {
 
   @Override
   public ArrayList<Row> executeTimeRangeQuery(TimeRangeQueryRequest trReadReq) throws IOException {
-    ArrayList<Row> ret;
+    if(!trReadReq.getTableName().equals(tableName)){
+      return new ArrayList<>();
+    }
     int id = idManager.getId(trReadReq.getVin(),false);
     if(id == -1){
-      return null;
+      return new ArrayList<Row>();
     }
+    ArrayList<Row> ret;
     Future<ArrayList<Row>> future = WRPool.submit(new ReadTask(fileSystem,trReadReq.getVin(),id, trReadReq.getTimeLowerBound(), trReadReq.getTimeUpperBound(), trReadReq.getRequestedColumns()));
     try {
       ret = future.get();
@@ -139,15 +143,98 @@ public class TSDBEngineImpl extends TSDBEngine {
   }
 
   @Override public ArrayList<Row> executeAggregateQuery(TimeRangeAggregationRequest aggregationReq) throws IOException {
-    return null;
+    ArrayList<Row> ret = new ArrayList<>();
+    if(!aggregationReq.getTableName().equals(tableName)){
+      return ret;
+    }
+    int id = idManager.getId(aggregationReq.getVin(),false);
+    if(id==-1){
+      return ret;
+    }
+    Future<AggResult> future = WRPool.submit(new AggTask(fileSystem,id,aggregationReq.getTimeLowerBound(),
+            aggregationReq.getTimeUpperBound(),aggregationReq.getColumnName(),null));
+    try {
+      AggResult aggResult = future.get();
+      String colName = aggregationReq.getColumnName();
+      ColumnValue.ColumnType colType = schema.getType(colName);
+      ColumnValue value;
+      switch (aggregationReq.getAggregator()){
+        case AVG:
+          value =  new ColumnValue.DoubleFloatColumn(aggResult.getAvg());
+          break;
+        case MAX:
+          switch (colType){
+            case COLUMN_TYPE_INTEGER:
+              value = new ColumnValue.IntegerColumn(aggResult.getIntMax());
+              break;
+            case COLUMN_TYPE_DOUBLE_FLOAT:
+              value = new ColumnValue.DoubleFloatColumn(aggResult.getDoubleMax());
+              break;
+            default:
+              throw new RuntimeException("not supported type for max aggregation");
+          }
+          break;
+        default:
+          throw new RuntimeException("not supported aggregation operator");
+      }
+      Map<String,ColumnValue> columns = new HashMap<>();
+      columns.put(colName,value);
+      ret.add(new Row(aggregationReq.getVin(),aggregationReq.getTimeLowerBound(),columns));
+    }catch (Exception e){
+      throw new RuntimeException(e);
+    }
+    return ret;
   }
 
   @Override public ArrayList<Row> executeDownsampleQuery(TimeRangeDownsampleRequest downsampleReq) throws IOException {
-    return null;
+    ArrayList<Row> ret = new ArrayList<>();
+    Vin vin = downsampleReq.getVin();
+    int id = idManager.getId(vin,false);
+    if(downsampleReq.getTableName().equals(tableName) || id==-1){
+      return ret;
+    }
+    List<Future<AggResult>> futures = new ArrayList<>();
+    Queue<Long> timestamps = new LinkedList<>();
+    for(long p = downsampleReq.getTimeLowerBound();p < downsampleReq.getTimeUpperBound();p+=downsampleReq.getInterval()){
+      futures.add(WRPool.submit(new AggTask(fileSystem,id,p,p+downsampleReq.getInterval(),
+              downsampleReq.getColumnName(), downsampleReq.getColumnFilter())));
+      timestamps.offer(p);
+    }
+    try {
+      for(Future<AggResult> future:futures){
+        AggResult aggResult = future.get();
+        if(aggResult.isEmpty()){
+          continue;
+        }
+        Map<String,ColumnValue> columns = new HashMap<>();
+        ColumnValue value;
+        switch (downsampleReq.getAggregator()){
+          case AVG:
+            value = new ColumnValue.DoubleFloatColumn(aggResult.getAvg());
+            break;
+          case MAX:
+            switch (schema.getType(downsampleReq.getColumnName())){
+              case COLUMN_TYPE_INTEGER:
+                value = new ColumnValue.IntegerColumn(aggResult.getIntMax());
+                break;
+              case COLUMN_TYPE_DOUBLE_FLOAT:
+                value = new ColumnValue.DoubleFloatColumn(aggResult.getDoubleMax());
+                break;
+              default:
+                throw new RuntimeException("not supported type for max aggregation");
+            }
+            break;
+          default:
+            throw new RuntimeException("not supported aggregation operator");
+        }
+        columns.put(downsampleReq.getColumnName(),value);
+        ret.add(new Row(vin,timestamps.poll(),columns));
+      }
+    }catch (Exception e){
+      throw new RuntimeException(e);
+    }
+    return ret;
   }
-
-
-
 
   private static Row filterColumns(Row row,Set<String> requested){
     if(requested.isEmpty()){
@@ -160,8 +247,5 @@ public class TSDBEngineImpl extends TSDBEngine {
     }
     return new Row(row.getVin(),row.getTimestamp(),requestedColumns);
   }
-
-
-
 
 }

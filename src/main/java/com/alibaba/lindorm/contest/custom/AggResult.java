@@ -3,8 +3,13 @@ package com.alibaba.lindorm.contest.custom;
 import com.alibaba.lindorm.contest.structs.ColumnValue;
 import com.alibaba.lindorm.contest.test.TestUtils;
 
+import java.util.List;
+
 public class AggResult{
+    //有效数据条数
     private int count;
+    //无效数据条数
+    private int invalid;
     private long intSum;
     private int intMax;
     private double doubleSum;
@@ -16,10 +21,10 @@ public class AggResult{
         TestUtils.check(valueType == ColumnValue.ColumnType.COLUMN_TYPE_INTEGER
                 || valueType == ColumnValue.ColumnType.COLUMN_TYPE_DOUBLE_FLOAT);
         this.valueType = valueType;
-        count = -1;
     }
 
-    public double getAvg(){
+    public Double getAvg(){
+        TestUtils.check(!isEmpty());
         if(count==0){
             return Double.NEGATIVE_INFINITY;
         }
@@ -30,8 +35,9 @@ public class AggResult{
         }
     }
 
-    public int getIntMax(){
-        TestUtils.check(valueType== ColumnValue.ColumnType.COLUMN_TYPE_INTEGER);
+    public Integer getIntMax(){
+        //TestUtils.check(valueType== ColumnValue.ColumnType.COLUMN_TYPE_INTEGER);
+        TestUtils.check(!isEmpty());
         if(count==0){
             return 0x80000000;
         }else{
@@ -39,8 +45,9 @@ public class AggResult{
         }
     }
 
-    public double getDoubleMax(){
-        TestUtils.check(valueType== ColumnValue.ColumnType.COLUMN_TYPE_DOUBLE_FLOAT);
+    public Double getDoubleMax(){
+        //TestUtils.check(valueType== ColumnValue.ColumnType.COLUMN_TYPE_DOUBLE_FLOAT);
+        TestUtils.check(!isEmpty());
         if(count==0){
             return Double.NEGATIVE_INFINITY;
         }
@@ -48,39 +55,43 @@ public class AggResult{
     }
     public void addInt(int num){
         TestUtils.check(valueType== ColumnValue.ColumnType.COLUMN_TYPE_INTEGER);
-        if(count==-1){
-            count = 0;
-        }
         count++;
         intSum += num;
         intMax = Math.max(num, intMax);
     }
     public void addDouble(double num){
         TestUtils.check(valueType== ColumnValue.ColumnType.COLUMN_TYPE_DOUBLE_FLOAT);
-        if(count==-1){
-            count = 0;
-        }
         count++;
         doubleSum += num;
         doubleMax = Math.max(num,doubleMax);
     }
 
+    public void addInvalid(){
+        invalid++;
+    }
+
     public AggResult merge(AggResult other){
         TestUtils.check(valueType==other.valueType);
-        if(count==-1 && other.count==-1){
-            return this;
-        }
-        if(count==-1){
-            return other;
-        }
-        if (other.count==-1){
-            return this;
-        }
         count += other.count;
         intSum += other.intSum;
         intMax = Math.max(intMax,other.intMax);
         doubleSum += other.doubleSum;
         doubleMax = Math.max(doubleMax,other.doubleMax);
         return this;
+    }
+
+    public static AggResult merge(List<AggResult> aggResultList){
+        if(aggResultList.size()==0){
+            return new AggResult();
+        }
+        AggResult aggResult = aggResultList.get(0);
+        for(int i = 1;i < aggResultList.size();++i){
+            aggResult = aggResult.merge(aggResultList.get(i));
+        }
+        return aggResult;
+    }
+
+    public boolean isEmpty(){
+        return invalid+count == 0;
     }
 }

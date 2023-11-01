@@ -194,4 +194,116 @@ public class MappedFile {
         }
         return aggResult;
     }
+
+    public AggResult aggColumnEqual(int id,String colName,long timeLowerBound,long timeUpperBound,ColumnValue target){
+        ColumnValue.ColumnType type = target.getColumnType();
+        int intTarget = 0;
+        double doubleTarget = 0.0;
+        if(type == ColumnValue.ColumnType.COLUMN_TYPE_INTEGER){
+            intTarget = target.getIntegerValue();
+        }else{
+            doubleTarget = target.getDoubleFloatValue();
+        }
+        int colOffset = schema.getOffset(colName);
+        ColumnValue.ColumnType colType = schema.getType(colName);
+        AggResult aggResult = new AggResult(colType);
+        int beginSecond = getSecond(timeLowerBound);
+        int endSecond = getSecond(timeUpperBound-1);
+        TestUtils.check(beginSecond <= endSecond);
+
+        OUT:
+        for(int second = beginSecond;second <= endSecond;++second){
+            int rowBegin = getRowBegin(id,second);
+            byte flag = mbb.get(rowBegin);
+            short milli = mbb.getShort(rowBegin+1);
+            if(flag!=0){
+                long timestamp = getTimestamp(second,milli);
+                if(second == beginSecond && timestamp < timeLowerBound){
+                    continue;
+                }
+                if(second == endSecond && timestamp >= timeUpperBound){
+                    continue;
+                }
+                switch (colType){
+                    case COLUMN_TYPE_INTEGER:
+                        int intValue = mbb.getInt(rowBegin+colOffset);
+                        if(intValue==intTarget){
+                            aggResult.addInt(intValue);
+                            break OUT;
+                        }else {
+                            aggResult.addInvalid();
+                        }
+                        break;
+                    case COLUMN_TYPE_DOUBLE_FLOAT:
+                        double doubleValue = mbb.getDouble(rowBegin+colOffset);
+                        if(doubleValue==doubleTarget){
+                            aggResult.addDouble(doubleValue);
+                            break OUT;
+                        }else {
+                            aggResult.addInvalid();
+                        }
+                        break;
+                    default:
+                        throw new RuntimeException("not supported type for aggregation");
+                }
+            }
+        }
+        return aggResult;
+    }
+
+    public AggResult aggColumnGreater(int id,String colName,long timeLowerBound,long timeUpperBound,ColumnValue target){
+        ColumnValue.ColumnType type = target.getColumnType();
+        int intTarget = 0;
+        double doubleTarget = 0.0;
+        if(type == ColumnValue.ColumnType.COLUMN_TYPE_INTEGER){
+            intTarget = target.getIntegerValue();
+        }else{
+            doubleTarget = target.getDoubleFloatValue();
+        }
+        int colOffset = schema.getOffset(colName);
+        ColumnValue.ColumnType colType = schema.getType(colName);
+        AggResult aggResult = new AggResult(colType);
+        int beginSecond = getSecond(timeLowerBound);
+        int endSecond = getSecond(timeUpperBound-1);
+        TestUtils.check(beginSecond <= endSecond);
+        for(int second = beginSecond;second <= endSecond;++second){
+            int rowBegin = getRowBegin(id,second);
+            byte flag = mbb.get(rowBegin);
+            short milli = mbb.getShort(rowBegin+1);
+            if(flag!=0){
+                long timestamp = getTimestamp(second,milli);
+                if(second == beginSecond && timestamp < timeLowerBound){
+                    continue;
+                }
+                if(second == endSecond && timestamp >= timeUpperBound){
+                    continue;
+                }
+                switch (colType){
+                    case COLUMN_TYPE_INTEGER:
+                        int intValue = mbb.getInt(rowBegin+colOffset);
+                        if(intValue>intTarget){
+                            aggResult.addInt(intValue);
+                        }else {
+                            aggResult.addInvalid();
+                        }
+                        break;
+                    case COLUMN_TYPE_DOUBLE_FLOAT:
+                        double doubleValue = mbb.getDouble(rowBegin+colOffset);
+                        if(doubleValue>doubleTarget){
+                            aggResult.addDouble(doubleValue);
+                        }else {
+                            aggResult.addInvalid();
+                        }
+                        break;
+                    default:
+                        throw new RuntimeException("not supported type for aggregation");
+                }
+            }
+        }
+        return aggResult;
+    }
+
+    private boolean doubleEqual(double a, double b){
+        return Math.abs(a-b) < 0.000000001;
+    }
 }
