@@ -16,6 +16,10 @@ public class FileKey {
         return new FileKey(CommonUtils.getBuckle(id),partition);
     }
 
+    public static FileKey buildFromPB(int buckle,long partition){
+        return new FileKey(buckle,partition);
+    }
+
     @Override
     public int hashCode() {
         return Long.hashCode(partition*1000+buckle);

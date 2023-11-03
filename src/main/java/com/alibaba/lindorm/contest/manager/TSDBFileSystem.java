@@ -19,7 +19,7 @@ public class TSDBFileSystem {
     private int next;
     private AtomicInteger zeroRef;
     private int bufferUsed;
-    private ConcurrentMap<String,Integer> bufferIndex;
+    private ConcurrentMap<File,Integer> bufferIndex;
     private InternalSchema schema;
 
     public final File rootPath;
@@ -76,8 +76,8 @@ public class TSDBFileSystem {
         }
         MappedFile ret;
         synchronized (bufferPool){
-            if(bufferIndex.containsKey(file.getName())){
-                int idx = bufferIndex.get(file.getName());
+            if(bufferIndex.containsKey(file)){
+                int idx = bufferIndex.get(file);
                 if(refCount[idx].get()==0){
                     zeroRef.decrementAndGet();
                 }
@@ -104,7 +104,7 @@ public class TSDBFileSystem {
                     bufferUsed++;
                 }else {
                     zeroRef.decrementAndGet();
-                    String removed = bufferPool[next].file.getName();
+                    File removed = bufferPool[next].file;
                     bufferIndex.remove(removed);
                     try {
                         bufferPool[next].close();
@@ -113,25 +113,35 @@ public class TSDBFileSystem {
                     }
                 }
                 refCount[next].set(1);
-                bufferIndex.put(file.getName(), next);
+                bufferIndex.put(file, next);
                 bufferPool[next] = MappedFile.getInstance(file,fileKey, schema);
                 ret = bufferPool[next];
                 next = (next+1)%BUFFER_POOL_SIZE;
             }
         }
+        TestUtils.check(ret.partition== fileKey.partition && ret.buckle == fileKey.buckle);
         return ret;
     }
 
     public void deRefFile(MappedFile mappedFile){
-        TestUtils.check(bufferIndex.containsKey(mappedFile.file.getName()));
-        int idx = bufferIndex.get(mappedFile.file.getName());
-        TestUtils.check(refCount[idx].get()>0);
-        int count = refCount[idx].decrementAndGet();
-        if(count==0){
-            zeroRef.incrementAndGet();
+//        TestUtils.check(bufferIndex.containsKey(mappedFile.file.getName()));
+//        int idx = bufferIndex.get(mappedFile.file.getName());
+//        TestUtils.check(refCount[idx].get()>0);
+//        int count = refCount[idx].decrementAndGet();
+//        if(count==0){
+//            zeroRef.incrementAndGet();
+//        }
+        TestUtils.check(bufferIndex.containsKey(mappedFile.file));
+        synchronized (bufferPool){
+            int idx = bufferIndex.get(mappedFile.file);
+            TestUtils.check(refCount[idx].get()>0);
+            int count = refCount[idx].decrementAndGet();
+            if(count==0){
+                zeroRef.incrementAndGet();
+            }
         }
     }
-    public File getFile(FileKey fileKey,boolean allocate) {
+    private File getFile(FileKey fileKey,boolean allocate) {
         File partitionDir = new File(dataPath, String.valueOf(fileKey.partition));
         File file = new File(partitionDir, String.valueOf(fileKey.buckle));
         if (allocate) {

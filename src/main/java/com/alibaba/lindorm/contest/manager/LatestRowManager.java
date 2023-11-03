@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class LatestRowManager {
-    private final ConcurrentMap<VinWritable, Row> rowMap;
+    private final ConcurrentMap<Vin, Row> rowMap;
 //    private static int SEG_NUM = 32;
 //    private final AtomicBoolean[] segLocks;
     private LatestRowManager(){
@@ -26,7 +26,7 @@ public class LatestRowManager {
     private LatestRowManager(List<RowWritable> rowWritables, InternalSchema schema){
         this();
         for(RowWritable row: rowWritables){
-            rowMap.put(new VinWritable(row.getVin()),row.getRow(schema));
+            rowMap.put(row.getVin(),row.getRow(schema));
         }
     }
     public static LatestRowManager getInstance(){
@@ -36,10 +36,9 @@ public class LatestRowManager {
         return new LatestRowManager(rowWritables,schema);
     }
     public Row getLatestRow(Vin vin){
-        VinWritable vinWritable = new VinWritable(vin);
         Row ret = null;
-        if(rowMap.containsKey(vinWritable)){
-            ret = rowMap.get(vinWritable);
+        if(rowMap.containsKey(vin)){
+            ret = rowMap.get(vin);
         }
         return ret;
     }
@@ -58,17 +57,23 @@ public class LatestRowManager {
 //        }
 //    }
     public void upsert(Row row){
-        VinWritable vinWritable = new VinWritable(row.getVin());
-        Row latestRow = rowMap.get(vinWritable);
+        Vin vin = row.getVin();
+        Row latestRow = rowMap.get(vin);
         if(latestRow==null || latestRow.getTimestamp() < row.getTimestamp()){
             synchronized (rowMap){
-                latestRow = rowMap.get(vinWritable);
+                latestRow = rowMap.get(vin);
                 if(latestRow==null || latestRow.getTimestamp() < row.getTimestamp()){
-                    rowMap.put(new VinWritable(row.getVin()),row);
+                    rowMap.put(vin,row);
                 }
             }
         }
     }
+//    synchronized public void upsert(Row row){
+//        Row latestRow = rowMap.get(row.getVin());
+//        if(latestRow==null || latestRow.getTimestamp() < row.getTimestamp()){
+//            rowMap.put(row.getVin(),row);
+//        }
+//    }
     public ArrayList<RowWritable> getRowWriteableList(InternalSchema schema){
         ArrayList<RowWritable> ret = new ArrayList<>();
         for(Row row: rowMap.values()){

@@ -15,6 +15,7 @@ import com.alibaba.lindorm.contest.structs.*;
 import com.alibaba.lindorm.contest.task.AggTask;
 import com.alibaba.lindorm.contest.task.ReadTask;
 import com.alibaba.lindorm.contest.task.WriteTask;
+import com.alibaba.lindorm.contest.test.TestUtils;
 
 import java.io.*;
 import java.util.*;
@@ -27,6 +28,9 @@ public class TSDBEngineImpl extends TSDBEngine {
   private IdManager idManager;
   private LatestRowManager latestRowManager;
   private ExecutorService WRPool;
+  private final int THREAD_POOL_SIZE = 8;
+  private volatile boolean shutdown;
+  private File rootPath;
 
   
   /**
@@ -38,7 +42,9 @@ public class TSDBEngineImpl extends TSDBEngine {
     super(dataPath);
     fileSystem = TSDBFileSystem.getInstance(dataPath);
     tableName = fileSystem.tableName;
-    WRPool = Executors.newFixedThreadPool(8);
+    WRPool = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+    shutdown = false;
+    rootPath = dataPath;
   }
 
   /**
@@ -47,6 +53,11 @@ public class TSDBEngineImpl extends TSDBEngine {
    */
   @Override
   public void connect() throws IOException {
+    if(shutdown){
+      WRPool = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+      fileSystem = TSDBFileSystem.getInstance(rootPath);
+      shutdown = false;
+    }
     if(tableName==null){
       System.out.println("connect to empty database");
     }else{
@@ -57,6 +68,7 @@ public class TSDBEngineImpl extends TSDBEngine {
       ArrayList<RowWritable> rowWritables = fileSystem.loadFrom(fileSystem.rowFile);
       latestRowManager = LatestRowManager.getInstance(rowWritables,schema);
     }
+
   }
 
   @Override
@@ -66,6 +78,8 @@ public class TSDBEngineImpl extends TSDBEngine {
     fileSystem.dumpTo(fileSystem.schemaFile,this.schema);
     idManager = IdManager.getInstance();
     latestRowManager = LatestRowManager.getInstance();
+    this.tableName = tableName;
+    fileSystem.dumpTo(fileSystem.nameFile,this.tableName);
 
     //info
     System.out.print(String.format("MMJ_INFO: create table with %d ints, %d doubles and %d strings\n"
@@ -78,6 +92,8 @@ public class TSDBEngineImpl extends TSDBEngine {
     ArrayList<RowWritable> rowWritables = latestRowManager.getRowWriteableList(schema);
     fileSystem.dumpTo(fileSystem.rowFile,rowWritables);
     fileSystem.shutdown();
+    WRPool.shutdown();
+    shutdown = true;
   }
 
   /**
@@ -93,6 +109,7 @@ public class TSDBEngineImpl extends TSDBEngine {
     Map<FileKey,List<RowWrapped>> rowListMap = new HashMap<>();
     for(Row row:wReq.getRows()){
       int id = idManager.getId(row.getVin(),true);
+      TestUtils.check(id!=-1);
       latestRowManager.upsert(row);
       FileKey fileKey = FileKey.buildFromTimestamp(id,row.getTimestamp());
       if(!rowListMap.containsKey(fileKey)){
@@ -133,7 +150,11 @@ public class TSDBEngineImpl extends TSDBEngine {
       return new ArrayList<Row>();
     }
     ArrayList<Row> ret;
-    Future<ArrayList<Row>> future = WRPool.submit(new ReadTask(fileSystem,trReadReq.getVin(),id, trReadReq.getTimeLowerBound(), trReadReq.getTimeUpperBound(), trReadReq.getRequestedColumns()));
+    Set<String> colNames = trReadReq.getRequestedColumns();
+    if(colNames==null || colNames.size()==0){
+      colNames = schema.getColumnNames();
+    }
+    Future<ArrayList<Row>> future = WRPool.submit(new ReadTask(fileSystem,trReadReq.getVin(),id, trReadReq.getTimeLowerBound(), trReadReq.getTimeUpperBound(), colNames));
     try {
       ret = future.get();
     }catch (Exception e){
@@ -190,7 +211,7 @@ public class TSDBEngineImpl extends TSDBEngine {
     ArrayList<Row> ret = new ArrayList<>();
     Vin vin = downsampleReq.getVin();
     int id = idManager.getId(vin,false);
-    if(downsampleReq.getTableName().equals(tableName) || id==-1){
+    if(!downsampleReq.getTableName().equals(tableName) || id==-1){
       return ret;
     }
     List<Future<AggResult>> futures = new ArrayList<>();

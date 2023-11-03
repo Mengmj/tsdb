@@ -34,9 +34,11 @@ public class ReadTask implements Callable<ArrayList<Row>> {
         ArrayList<Row> ret = new ArrayList<>();
         for(long p = beginPartition; p <= endPartition;++p){
             FileKey fileKey = FileKey.buildFromPartition(id,p);
+            long lower = Math.max(CommonUtils.getPartitionBegin(p),timeLowerBound);
+            long upper = Math.min(CommonUtils.getPartitionEnd(p),timeUpperBound);
             MappedFile mappedFile = fileSystem.getMappedFile(fileKey,false);
             if(mappedFile!=null){
-                ret.addAll(mappedFile.readRows(vin,id,colNames,CommonUtils.getPartitionBegin(p),CommonUtils.getPartitionEnd(p)));
+                ret.addAll(mappedFile.readRows(vin,id,colNames,lower,upper));
             }
             fileSystem.deRefFile(mappedFile);
         }

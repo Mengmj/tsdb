@@ -51,6 +51,8 @@ public class IdManager implements Serializable {
                         id = counter.get();
                         vinMap.put(vinWritable,id);
                         counter.incrementAndGet();
+                    }{
+                        id = vinMap.get(vinWritable);
                     }
                 }
             }

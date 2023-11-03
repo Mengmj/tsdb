@@ -7,8 +7,6 @@ import java.io.File;
 public class FileTest {
     public static void main(String[] args) throws Exception{
         File file = new File(TestUtils.TEST_DIR,"filetest/test.txt");
-        if(!file.exists()){
-            file.createNewFile();
-        }
+        System.out.println(file);
     }
 }

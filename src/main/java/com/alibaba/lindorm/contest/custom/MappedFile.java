@@ -24,8 +24,8 @@ public class MappedFile {
     private final int DATA_END;
     private final AtomicInteger textEnd;
     private final InternalSchema schema;
-    private final long partition;
-    private final int buckle;
+    public final long partition;
+    public final int buckle;
     private final RandomAccessFile randomAccessFile;
     private final FileChannel fc;
     public final File file;
@@ -305,5 +305,21 @@ public class MappedFile {
 
     private boolean doubleEqual(double a, double b){
         return Math.abs(a-b) < 0.000000001;
+    }
+
+    //测试用
+    public void writeBytes(int pos,byte[] bytes){
+        for(byte b: bytes){
+            mbb.put(pos,b);
+            pos++;
+        }
+    }
+    public void writeByte(int pos,byte b){
+        byte a = mbb.get(pos);
+        TestUtils.check(a==0 || a==b);
+        mbb.put(pos,b);
+    }
+    public byte readByte(int pos){
+        return mbb.get(pos);
     }
 }

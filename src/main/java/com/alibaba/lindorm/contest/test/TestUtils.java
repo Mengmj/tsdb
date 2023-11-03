@@ -11,7 +11,7 @@ import java.util.*;
 
 public class TestUtils {
 
-    public static final File TEST_DIR = new File("/data/home/mingjinmeng/playground/contest/testdir");
+    public static final File TEST_DIR = new File("/Users/meng/playground/testdir");
     public static final Schema TEST_SCHEMA;
     static {
         SortedMap<String, ColumnValue.ColumnType> columnTypeMap = new TreeMap<>();
@@ -129,10 +129,10 @@ public class TestUtils {
     }
     public static List<Vin> randomVins(int n){
         List<Vin> ret = new ArrayList<>(n);
-        long seed = System.currentTimeMillis()+Thread.currentThread().getId();
+        long seed = System.currentTimeMillis()+Thread.currentThread().getId()*20231103;
         Random random = new Random(seed);
-        byte[] bytes = new byte[17];
         for(int i = 0;i < n;++i){
+            byte[] bytes = new byte[17];
             random.nextBytes(bytes);
             ret.add(new Vin(bytes));
         }
@@ -193,5 +193,22 @@ public class TestUtils {
         if(!flag){
             throw new RuntimeException("check not true");
         }
+    }
+
+    public static void cleanDir(File dir){
+        if(!dir.exists()){
+            return;
+        }
+        if(dir.isDirectory()){
+            File[] files = dir.listFiles();
+            for(File file: files){
+                cleanDir(file);
+                file.delete();
+            }
+        }
+    }
+
+    public static void remove(File dir){
+
     }
 }
