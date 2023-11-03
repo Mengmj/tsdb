@@ -31,7 +31,7 @@ public class AggTest {
         db = new TSDBEngineImpl(rootPath);
         db.connect();
 
-        TimeRangeAggregationRequest aRequest = new TimeRangeAggregationRequest(tableName,vin,"double_11",beginTime,beginTime+10*1000,Aggregator.AVG);
+        TimeRangeAggregationRequest aRequest = new TimeRangeAggregationRequest(tableName,vin,"double_11",beginTime,beginTime+10*1000,Aggregator.MAX);
         List<Row> result = db.executeAggregateQuery(aRequest);
         System.out.println(result);
         db.shutdown();

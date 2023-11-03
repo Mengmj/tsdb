@@ -16,8 +16,12 @@ public class AggResult{
     private double doubleMax;
 
     private ColumnValue.ColumnType valueType;
-    private AggResult(){};
+    private AggResult(){
+        intMax = Integer.MIN_VALUE;
+        doubleMax = Double.NEGATIVE_INFINITY;
+    };
     public AggResult(ColumnValue.ColumnType valueType){
+        this();
         TestUtils.check(valueType == ColumnValue.ColumnType.COLUMN_TYPE_INTEGER
                 || valueType == ColumnValue.ColumnType.COLUMN_TYPE_DOUBLE_FLOAT);
         this.valueType = valueType;

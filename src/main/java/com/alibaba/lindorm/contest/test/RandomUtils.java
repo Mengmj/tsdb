@@ -38,11 +38,11 @@ public class RandomUtils {
             ColumnValue value = null;
             switch(t){
                 case COLUMN_TYPE_DOUBLE_FLOAT:
-                    value = new ColumnValue.DoubleFloatColumn(random.nextDouble());
+                    value = new ColumnValue.DoubleFloatColumn(-random.nextDouble());
                     //value = new ColumnValue.DoubleFloatColumn(1L);
                     break;
                 case COLUMN_TYPE_INTEGER:
-                    value = new ColumnValue.IntegerColumn(random.nextInt(1000));
+                    value = new ColumnValue.IntegerColumn(-random.nextInt(1000));
                     //value = new ColumnValue.IntegerColumn(100);
                     break;
                 case COLUMN_TYPE_STRING:
