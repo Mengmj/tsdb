@@ -39,8 +39,8 @@ public class ReadTask implements Callable<ArrayList<Row>> {
             MappedFile mappedFile = fileSystem.getMappedFile(fileKey,false);
             if(mappedFile!=null){
                 ret.addAll(mappedFile.readRows(vin,id,colNames,lower,upper));
+                fileSystem.deRefFile(mappedFile);
             }
-            fileSystem.deRefFile(mappedFile);
         }
         return ret;
     }
