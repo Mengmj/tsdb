@@ -24,14 +24,14 @@ public class AggTest {
         db.createTable(tableName,TestUtils.TEST_SCHEMA);
         RandomUtils randomUtils = new RandomUtils();
         Vin vin = randomUtils.randomVin();
-        long beginTime = 1698994650000L;
+        long beginTime = 1698994620000L;
         List<Row> rows = randomUtils.randomRows(vin,beginTime,TestUtils.TEST_SCHEMA,60);
         db.write(new WriteRequest(tableName,rows));
         db.shutdown();
         db = new TSDBEngineImpl(rootPath);
         db.connect();
 
-        TimeRangeAggregationRequest aRequest = new TimeRangeAggregationRequest(tableName,vin,"double_11",beginTime,beginTime+10*1000,Aggregator.MAX);
+        TimeRangeAggregationRequest aRequest = new TimeRangeAggregationRequest(tableName,vin,"double_11",beginTime-10*1000,beginTime+10*1000,Aggregator.MAX);
         List<Row> result = db.executeAggregateQuery(aRequest);
         System.out.println(result);
         db.shutdown();

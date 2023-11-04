@@ -81,6 +81,7 @@ public class AggResult{
         intMax = Math.max(intMax,other.intMax);
         doubleSum += other.doubleSum;
         doubleMax = Math.max(doubleMax,other.doubleMax);
+        invalid += other.invalid;
         return this;
     }
 

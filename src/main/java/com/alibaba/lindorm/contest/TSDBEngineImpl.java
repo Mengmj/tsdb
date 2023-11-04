@@ -225,6 +225,7 @@ public class TSDBEngineImpl extends TSDBEngine {
       for(Future<AggResult> future:futures){
         AggResult aggResult = future.get();
         if(aggResult.isEmpty()){
+          timestamps.poll();
           continue;
         }
         Map<String,ColumnValue> columns = new HashMap<>();
@@ -254,6 +255,13 @@ public class TSDBEngineImpl extends TSDBEngine {
     }catch (Exception e){
       throw new RuntimeException(e);
     }
+//    int eSize = (int)((downsampleReq.getTimeUpperBound()- downsampleReq.getTimeLowerBound())/downsampleReq.getInterval());
+//    if(eSize!=ret.size()){
+//      LogUtils.debug("%s result size:%d",LogUtils.toString(downsampleReq),ret.size());
+//      for(Row row:ret){
+//        System.out.println(row);
+//      }
+//    }
     return ret;
   }
 
