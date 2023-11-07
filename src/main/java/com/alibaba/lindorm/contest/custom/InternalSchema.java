@@ -23,6 +23,9 @@ public class InternalSchema implements Serializable {
 
     public final int rawLength;
 
+    public final String[] strColumns;
+    public final String[] numericColumns;
+
 
     private InternalSchema(Map<String, ColumnValue.ColumnType> columnTypeMap){
         this.columnTypeMap = columnTypeMap;
@@ -56,6 +59,18 @@ public class InternalSchema implements Serializable {
         intCount = int_count;
         doubleCount = double_count;
         stringCount = string_count;
+        strColumns = new String[stringCount];
+        numericColumns = new String[intCount+doubleCount];
+        int strIdx = 0,numIdx = 0;
+        for(int j = 0;j < columnCount;++j){
+            if(columnTypes[j]== ColumnValue.ColumnType.COLUMN_TYPE_STRING){
+                strColumns[strIdx] = colNames[j];
+                ++strIdx;
+            }else {
+                numericColumns[numIdx] = colNames[j];
+                ++numIdx;
+            }
+        }
         rawLength = Byte.BYTES+Short.BYTES+intCount*Integer.BYTES+doubleCount*Double.BYTES+stringCount*(2*Integer.BYTES);
     }
 

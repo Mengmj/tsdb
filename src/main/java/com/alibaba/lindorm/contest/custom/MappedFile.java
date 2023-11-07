@@ -3,8 +3,10 @@ package com.alibaba.lindorm.contest.custom;
 import com.alibaba.lindorm.contest.CommonUtils;
 import com.alibaba.lindorm.contest.LogUtils;
 import com.alibaba.lindorm.contest.structs.ColumnValue;
+import com.alibaba.lindorm.contest.structs.CompareExpression;
 import com.alibaba.lindorm.contest.structs.Row;
 import com.alibaba.lindorm.contest.structs.Vin;
+import com.alibaba.lindorm.contest.test.Counter;
 import com.alibaba.lindorm.contest.test.TestUtils;
 
 import java.io.File;
@@ -17,7 +19,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MappedFile {
-    private static final int MAXIMUM_SIZE = 64 * 1024 * 1024;
+    private static final int MAXIMUM_SIZE = 256 * 1024 * 1024;
     private static final int HEADER_SIZE = 1024;
     private MappedByteBuffer mbb;
     private final int DATA_BEGIN = HEADER_SIZE;
@@ -80,7 +82,7 @@ public class MappedFile {
                         mbb.putInt(offset,strSize);
                         offset+=Integer.BYTES;
                         while(buffer.remaining()>0){
-                            mbb.put(strBegin,buffer.get());
+                            mbb.put(strBegin, buffer.get());
                             strBegin++;
                         }
                 }
@@ -195,7 +197,7 @@ public class MappedFile {
         return aggResult;
     }
 
-    public AggResult aggColumnEqual(int id,String colName,long timeLowerBound,long timeUpperBound,ColumnValue target){
+    private AggResult aggColumnEqual(int id,String colName,long timeLowerBound,long timeUpperBound,ColumnValue target){
         ColumnValue.ColumnType type = target.getColumnType();
         int intTarget = 0;
         double doubleTarget = 0.0;
@@ -251,7 +253,7 @@ public class MappedFile {
         return aggResult;
     }
 
-    public AggResult aggColumnGreater(int id,String colName,long timeLowerBound,long timeUpperBound,ColumnValue target){
+    private AggResult aggColumnGreater(int id,String colName,long timeLowerBound,long timeUpperBound,ColumnValue target){
         ColumnValue.ColumnType type = target.getColumnType();
         int intTarget = 0;
         double doubleTarget = 0.0;
@@ -303,8 +305,18 @@ public class MappedFile {
         return aggResult;
     }
 
-    private boolean doubleEqual(double a, double b){
-        return Math.abs(a-b) < 0.000000001;
+    public AggResult aggColumn(int id, String colName, long timeLowerBound, long timeUpperBound, CompareExpression expression){
+        if(expression==null){
+            return aggColumn(id,colName,timeLowerBound,timeUpperBound);
+        }
+        switch (expression.getCompareOp()){
+            case EQUAL:
+                return aggColumnEqual(id,colName,timeLowerBound,timeUpperBound,expression.getValue());
+            case GREATER:
+                return aggColumnGreater(id,colName,timeLowerBound,timeUpperBound, expression.getValue());
+            default:
+                throw new RuntimeException("not supported agg op");
+        }
     }
 
     //测试用

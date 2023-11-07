@@ -1,12 +1,12 @@
 package com.alibaba.lindorm.contest.task;
 
+import com.alibaba.lindorm.contest.custom.DataFile;
 import com.alibaba.lindorm.contest.custom.FileKey;
-import com.alibaba.lindorm.contest.custom.MappedFile;
+import com.alibaba.lindorm.contest.custom.RawDataFile;
 import com.alibaba.lindorm.contest.custom.RowWrapped;
 import com.alibaba.lindorm.contest.manager.TSDBFileSystem;
 
 import java.util.List;
-import java.util.ListIterator;
 import java.util.Map;
 
 public class WriteTask implements Runnable{
@@ -21,9 +21,9 @@ public class WriteTask implements Runnable{
         for(var entry: rowListMap.entrySet()){
             FileKey fileKey = entry.getKey();
             List<RowWrapped> rowList = entry.getValue();
-            MappedFile mappedFile = fileSystem.getMappedFile(fileKey,true);
-            mappedFile.writeRows(rowList);
-            fileSystem.deRefFile(mappedFile);
+            DataFile dataFile = fileSystem.getDataFile(fileKey,true);
+            dataFile.writeRows(rowList);
+            fileSystem.derefFile(dataFile);
         }
     }
 }

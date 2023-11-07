@@ -2,8 +2,9 @@ package com.alibaba.lindorm.contest.task;
 
 import com.alibaba.lindorm.contest.CommonUtils;
 import com.alibaba.lindorm.contest.custom.AggResult;
+import com.alibaba.lindorm.contest.custom.DataFile;
 import com.alibaba.lindorm.contest.custom.FileKey;
-import com.alibaba.lindorm.contest.custom.MappedFile;
+import com.alibaba.lindorm.contest.custom.RawDataFile;
 import com.alibaba.lindorm.contest.manager.TSDBFileSystem;
 import com.alibaba.lindorm.contest.structs.CompareExpression;
 
@@ -38,19 +39,13 @@ public class AggTask implements Callable<AggResult> {
             long upper = Math.min(CommonUtils.getPartitionEnd(p),timeUpperBound);
             FileKey fileKey = FileKey.buildFromPartition(id,p);
             AggResult aggResult;
-            MappedFile mappedFile = fileSystem.getMappedFile(fileKey,false);
-            if(mappedFile==null){
+            DataFile dataFile = fileSystem.getDataFile(fileKey,false);
+            if(dataFile==null){
                 continue;
             }
-            if(compareExpression==null){
-                aggResult = mappedFile.aggColumn(id, colName, lower, upper);
-            }else if (compareExpression.getCompareOp()== CompareExpression.CompareOp.EQUAL){
-                aggResult = mappedFile.aggColumnEqual(id, colName, lower, upper, compareExpression.getValue());
-            }else{
-                aggResult = mappedFile.aggColumnGreater(id,colName, lower, upper, compareExpression.getValue());
-            }
+            aggResult = dataFile.aggColumn(id, colName, lower, upper, compareExpression);
             aggResults.add(aggResult);
-            fileSystem.deRefFile(mappedFile);
+            fileSystem.derefFile(dataFile);
         }
         return AggResult.merge(aggResults);
     }

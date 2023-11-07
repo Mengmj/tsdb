@@ -27,8 +27,8 @@ public class RangeQueryTest {
         db.createTable(tableName,TestUtils.TEST_SCHEMA);
         RandomUtils randomUtils = new RandomUtils();
         Vin vin = randomUtils.randomVin();
-        long beginTime = 1698994650000L;
-        List<Row> rows = randomUtils.randomRows(vin,beginTime,TestUtils.TEST_SCHEMA,60);
+        long beginTime = 1699160370000L;
+        List<Row> rows = randomUtils.randomRows(vin,beginTime,TestUtils.TEST_SCHEMA,3600);
         db.write(new WriteRequest(tableName,rows));
         db.shutdown();
         db = new TSDBEngineImpl(rootPath);

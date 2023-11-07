@@ -1,9 +1,6 @@
 package com.alibaba.lindorm.contest.manager;
 
-import com.alibaba.lindorm.contest.CommonUtils;
-import com.alibaba.lindorm.contest.custom.FileKey;
-import com.alibaba.lindorm.contest.custom.InternalSchema;
-import com.alibaba.lindorm.contest.custom.MappedFile;
+import com.alibaba.lindorm.contest.custom.*;
 import com.alibaba.lindorm.contest.structs.Schema;
 import com.alibaba.lindorm.contest.test.TestUtils;
 
@@ -13,8 +10,8 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class TSDBFileSystem {
-    private final int BUFFER_POOL_SIZE = 300;
-    private MappedFile[] bufferPool;
+    private final int BUFFER_POOL_SIZE = 100;
+    private DataFile[] bufferPool;
     private AtomicInteger[] refCount;
     private int next;
     private AtomicInteger zeroRef;
@@ -50,7 +47,7 @@ public class TSDBFileSystem {
             tableName = loadFrom(nameFile);
         }
 
-        bufferPool = new MappedFile[BUFFER_POOL_SIZE];
+        bufferPool = new RawDataFile[BUFFER_POOL_SIZE];
         refCount = new AtomicInteger[BUFFER_POOL_SIZE];
         bufferIndex = new ConcurrentHashMap<>();
         for(int i = 0;i < BUFFER_POOL_SIZE;++i){
@@ -69,12 +66,12 @@ public class TSDBFileSystem {
     public void setSchema(InternalSchema schema){
         this.schema = schema;
     }
-    public MappedFile getMappedFile(FileKey fileKey, boolean allocate){
+    public DataFile getDataFile(FileKey fileKey, boolean allocate){
         File file = getFile(fileKey,allocate);
         if(!file.exists()){
             return null;
         }
-        MappedFile ret;
+        DataFile ret;
         synchronized (bufferPool){
             if(bufferIndex.containsKey(file)){
                 int idx = bufferIndex.get(file);
@@ -114,7 +111,7 @@ public class TSDBFileSystem {
                 }
                 refCount[next].set(1);
                 bufferIndex.put(file, next);
-                bufferPool[next] = MappedFile.getInstance(file,fileKey, schema);
+                bufferPool[next] = RawDataFile.getInstance(file,fileKey, schema);
                 ret = bufferPool[next];
                 next = (next+1)%BUFFER_POOL_SIZE;
             }
@@ -123,7 +120,7 @@ public class TSDBFileSystem {
         return ret;
     }
 
-    public void deRefFile(MappedFile mappedFile){
+    public void derefFile(DataFile dataFile){
 //        TestUtils.check(bufferIndex.containsKey(mappedFile.file.getName()));
 //        int idx = bufferIndex.get(mappedFile.file.getName());
 //        TestUtils.check(refCount[idx].get()>0);
@@ -131,9 +128,9 @@ public class TSDBFileSystem {
 //        if(count==0){
 //            zeroRef.incrementAndGet();
 //        }
-        TestUtils.check(bufferIndex.containsKey(mappedFile.file));
+        TestUtils.check(bufferIndex.containsKey(dataFile.file));
         synchronized (bufferPool){
-            int idx = bufferIndex.get(mappedFile.file);
+            int idx = bufferIndex.get(dataFile.file);
             TestUtils.check(refCount[idx].get()>0);
             int count = refCount[idx].decrementAndGet();
             if(count==0){
@@ -141,6 +138,8 @@ public class TSDBFileSystem {
             }
         }
     }
+
+    //TODO 压缩文件处理
     private File getFile(FileKey fileKey,boolean allocate) {
         File partitionDir = new File(dataPath, String.valueOf(fileKey.partition));
         File file = new File(partitionDir, String.valueOf(fileKey.buckle));

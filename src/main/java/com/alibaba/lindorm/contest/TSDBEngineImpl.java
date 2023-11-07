@@ -13,13 +13,18 @@ import com.alibaba.lindorm.contest.manager.LatestRowManager;
 import com.alibaba.lindorm.contest.manager.TSDBFileSystem;
 import com.alibaba.lindorm.contest.structs.*;
 import com.alibaba.lindorm.contest.task.AggTask;
+import com.alibaba.lindorm.contest.task.DownsampleTask;
 import com.alibaba.lindorm.contest.task.ReadTask;
 import com.alibaba.lindorm.contest.task.WriteTask;
+import com.alibaba.lindorm.contest.test.Counter;
 import com.alibaba.lindorm.contest.test.TestUtils;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class TSDBEngineImpl extends TSDBEngine {
   String tableName;
@@ -28,11 +33,12 @@ public class TSDBEngineImpl extends TSDBEngine {
   private IdManager idManager;
   private LatestRowManager latestRowManager;
   private ExecutorService WRPool;
-  private final int THREAD_POOL_SIZE = 8;
+  private final int THREAD_POOL_SIZE = 256;
   private volatile boolean shutdown;
   private File rootPath;
 
-  
+  private volatile AtomicInteger choseId;
+
   /**
    * This constructor's function signature should not be modified.
    * Our evaluation program will call this constructor.
@@ -45,6 +51,8 @@ public class TSDBEngineImpl extends TSDBEngine {
     WRPool = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
     shutdown = false;
     rootPath = dataPath;
+    //debug
+    choseId = new AtomicInteger(-1);
   }
 
   /**
@@ -94,6 +102,7 @@ public class TSDBEngineImpl extends TSDBEngine {
     fileSystem.shutdown();
     WRPool.shutdown();
     shutdown = true;
+    choseId.set(-1);
   }
 
   /**
@@ -140,6 +149,12 @@ public class TSDBEngineImpl extends TSDBEngine {
     return retList;
   }
 
+  /**
+   * 将范围查询划分为几个文件的上的查询,每个查询作为一个独立的任务放入线程池执行
+   * @param trReadReq
+   * @return
+   * @throws IOException
+   */
   @Override
   public ArrayList<Row> executeTimeRangeQuery(TimeRangeQueryRequest trReadReq) throws IOException {
     if(!trReadReq.getTableName().equals(tableName)){
@@ -147,16 +162,28 @@ public class TSDBEngineImpl extends TSDBEngine {
     }
     int id = idManager.getId(trReadReq.getVin(),false);
     if(id == -1){
-      return new ArrayList<Row>();
+      return new ArrayList<>();
     }
-    ArrayList<Row> ret;
+    ArrayList<Row> ret = new ArrayList<>();
     Set<String> colNames = trReadReq.getRequestedColumns();
     if(colNames==null || colNames.size()==0){
       colNames = schema.getColumnNames();
     }
-    Future<ArrayList<Row>> future = WRPool.submit(new ReadTask(fileSystem,trReadReq.getVin(),id, trReadReq.getTimeLowerBound(), trReadReq.getTimeUpperBound(), colNames));
+    //第一条记录所在的分区
+    long beginPartition = CommonUtils.getPartition(trReadReq.getTimeLowerBound());
+    //最后一条记录所在的分区
+    long endPartition = CommonUtils.getPartition(trReadReq.getTimeUpperBound()-1);
+
+    List<Future<ArrayList<Row>>> futures = new ArrayList<>();
+    for(long p = beginPartition;p <= endPartition;++p){
+      long lowerTime = Math.max(trReadReq.getTimeLowerBound(),CommonUtils.getPartitionBegin(p));
+      long upperTime = Math.min(trReadReq.getTimeUpperBound(),CommonUtils.getPartitionEnd(p));
+      futures.add(WRPool.submit(new ReadTask(fileSystem,trReadReq.getVin(),id,lowerTime,upperTime,colNames)));
+    }
     try {
-      ret = future.get();
+      for (var f:futures){
+        ret.addAll(f.get());
+      }
     }catch (Exception e){
       throw new RuntimeException(e);
     }
@@ -172,38 +199,53 @@ public class TSDBEngineImpl extends TSDBEngine {
     if(id==-1){
       return ret;
     }
-    Future<AggResult> future = WRPool.submit(new AggTask(fileSystem,id,aggregationReq.getTimeLowerBound(),
-            aggregationReq.getTimeUpperBound(),aggregationReq.getColumnName(),null));
+    String colName = aggregationReq.getColumnName();
+    //需要聚合的第一个分区
+    long beginPartition = CommonUtils.getPartition(aggregationReq.getTimeLowerBound());
+    //需要聚合的最后一个分区
+    long endPartition = CommonUtils.getPartition(aggregationReq.getTimeUpperBound()-1);
+    List<Future<AggResult>> futures = new ArrayList<>();
+    for(long p = beginPartition;p <= endPartition;++p){
+      long lowerTime = Math.max(aggregationReq.getTimeLowerBound(),CommonUtils.getPartitionBegin(p));
+      long upperTime = Math.min(aggregationReq.getTimeUpperBound(),CommonUtils.getPartitionEnd(p));
+      futures.add(WRPool.submit(new AggTask(fileSystem,id,lowerTime,upperTime,colName,null)));
+    }
+    ColumnValue.ColumnType colType = schema.getType(colName);
+    AggResult aggResult = new AggResult(schema.getType(colName));
     try {
-      AggResult aggResult = future.get();
-      String colName = aggregationReq.getColumnName();
-      ColumnValue.ColumnType colType = schema.getType(colName);
-      ColumnValue value;
-      switch (aggregationReq.getAggregator()){
-        case AVG:
-          value =  new ColumnValue.DoubleFloatColumn(aggResult.getAvg());
-          break;
-        case MAX:
-          switch (colType){
-            case COLUMN_TYPE_INTEGER:
-              value = new ColumnValue.IntegerColumn(aggResult.getIntMax());
-              break;
-            case COLUMN_TYPE_DOUBLE_FLOAT:
-              value = new ColumnValue.DoubleFloatColumn(aggResult.getDoubleMax());
-              break;
-            default:
-              throw new RuntimeException("not supported type for max aggregation");
-          }
-          break;
-        default:
-          throw new RuntimeException("not supported aggregation operator");
+      for(var f:futures){
+        aggResult.merge(f.get());
       }
-      Map<String,ColumnValue> columns = new HashMap<>();
-      columns.put(colName,value);
-      ret.add(new Row(aggregationReq.getVin(),aggregationReq.getTimeLowerBound(),columns));
     }catch (Exception e){
       throw new RuntimeException(e);
     }
+    if(aggResult.isEmpty()){
+      //聚合范围内没有数据
+      return ret;
+    }
+    ColumnValue value;
+    switch (aggregationReq.getAggregator()){
+      case AVG:
+        value =  new ColumnValue.DoubleFloatColumn(aggResult.getAvg());
+        break;
+      case MAX:
+        switch (colType){
+          case COLUMN_TYPE_INTEGER:
+            value = new ColumnValue.IntegerColumn(aggResult.getIntMax());
+            break;
+          case COLUMN_TYPE_DOUBLE_FLOAT:
+            value = new ColumnValue.DoubleFloatColumn(aggResult.getDoubleMax());
+            break;
+          default:
+            throw new RuntimeException("not supported type for max aggregation");
+        }
+        break;
+      default:
+        throw new RuntimeException("not supported aggregation operator");
+    }
+    Map<String,ColumnValue> columns = new HashMap<>();
+    columns.put(colName,value);
+    ret.add(new Row(aggregationReq.getVin(),aggregationReq.getTimeLowerBound(),columns));
     return ret;
   }
 
@@ -214,54 +256,56 @@ public class TSDBEngineImpl extends TSDBEngine {
     if(!downsampleReq.getTableName().equals(tableName) || id==-1){
       return ret;
     }
-    List<Future<AggResult>> futures = new ArrayList<>();
-    Queue<Long> timestamps = new LinkedList<>();
-    for(long p = downsampleReq.getTimeLowerBound();p < downsampleReq.getTimeUpperBound();p+=downsampleReq.getInterval()){
-      futures.add(WRPool.submit(new AggTask(fileSystem,id,p,p+downsampleReq.getInterval(),
-              downsampleReq.getColumnName(), downsampleReq.getColumnFilter())));
-      timestamps.offer(p);
+    List<Future<Map<Long,AggResult>>> singleFileAggs = new ArrayList<>();
+    Map<Long,Future<AggResult>> twoFileAggs = new HashMap<>();
+    long lower = downsampleReq.getTimeLowerBound();
+    long interval = downsampleReq.getInterval();
+    String colName = downsampleReq.getColumnName();
+    CompareExpression expression = downsampleReq.getColumnFilter();
+    while(lower < downsampleReq.getTimeUpperBound()){
+      long partition = CommonUtils.getPartition(lower);
+      long partitionEnd = CommonUtils.getPartitionEnd(partition);
+      if(lower+interval > partitionEnd){
+        //当前interval会跨分区文件
+        twoFileAggs.put(lower,WRPool.submit(new AggTask(fileSystem,id,lower,lower+interval,colName,expression)));
+        lower += interval;
+      }else{
+        //当前时间分区还有几个interval
+        long remainInterval = (Math.min(partitionEnd,downsampleReq.getTimeUpperBound()) - lower)/interval;
+        if(remainInterval==0){
+          break;
+        }
+        long nextLower = lower + remainInterval * interval;
+        //提交单文件降采样任务
+        singleFileAggs.add(WRPool.submit(new DownsampleTask(fileSystem,id,lower,nextLower,interval,colName,expression)));
+        lower = nextLower;
+      }
     }
-    try {
-      for(Future<AggResult> future:futures){
-        AggResult aggResult = future.get();
-        if(aggResult.isEmpty()){
-          timestamps.poll();
+    Aggregator aggOp = downsampleReq.getAggregator();
+    try{
+      for(var f: singleFileAggs){
+        Map<Long,AggResult> aggResults = f.get();
+        for(var entry: aggResults.entrySet()){
+          long timestamp = entry.getKey();
+          AggResult result = entry.getValue();
+          if(result==null || result.isEmpty()){
+            continue;
+          }
+          ret.add(buildRowFromAggResult(vin,timestamp,colName,result,aggOp));
+        }
+      }
+      for(var entry: twoFileAggs.entrySet()){
+        long timestamp = entry.getKey();
+        AggResult result = entry.getValue().get();
+        if(result==null || result.isEmpty()){
           continue;
         }
-        Map<String,ColumnValue> columns = new HashMap<>();
-        ColumnValue value;
-        switch (downsampleReq.getAggregator()){
-          case AVG:
-            value = new ColumnValue.DoubleFloatColumn(aggResult.getAvg());
-            break;
-          case MAX:
-            switch (schema.getType(downsampleReq.getColumnName())){
-              case COLUMN_TYPE_INTEGER:
-                value = new ColumnValue.IntegerColumn(aggResult.getIntMax());
-                break;
-              case COLUMN_TYPE_DOUBLE_FLOAT:
-                value = new ColumnValue.DoubleFloatColumn(aggResult.getDoubleMax());
-                break;
-              default:
-                throw new RuntimeException("not supported type for max aggregation");
-            }
-            break;
-          default:
-            throw new RuntimeException("not supported aggregation operator");
-        }
-        columns.put(downsampleReq.getColumnName(),value);
-        ret.add(new Row(vin,timestamps.poll(),columns));
+        ret.add(buildRowFromAggResult(vin,timestamp,colName,result,aggOp));
       }
     }catch (Exception e){
       throw new RuntimeException(e);
     }
-//    int eSize = (int)((downsampleReq.getTimeUpperBound()- downsampleReq.getTimeLowerBound())/downsampleReq.getInterval());
-//    if(eSize!=ret.size()){
-//      LogUtils.debug("%s result size:%d",LogUtils.toString(downsampleReq),ret.size());
-//      for(Row row:ret){
-//        System.out.println(row);
-//      }
-//    }
+    Collections.sort(ret,TSDBEngineImpl::compareRows);
     return ret;
   }
 
@@ -275,6 +319,40 @@ public class TSDBEngineImpl extends TSDBEngine {
       requestedColumns.put(colName,columes.get(colName));
     }
     return new Row(row.getVin(),row.getTimestamp(),requestedColumns);
+  }
+
+  private Row buildRowFromAggResult(Vin vin, long timestamp, String colName, AggResult aggResult, Aggregator aggregator){
+    if(aggResult.isEmpty()){
+      return null;
+    }
+    Map<String,ColumnValue> columns = new HashMap<>();
+    ColumnValue value;
+    ColumnValue.ColumnType colType = schema.getType(colName);
+    switch (aggregator){
+      case AVG:
+        value = new ColumnValue.DoubleFloatColumn(aggResult.getAvg());
+        break;
+      case MAX:
+        switch (colType){
+          case COLUMN_TYPE_INTEGER:
+            value = new ColumnValue.IntegerColumn(aggResult.getIntMax());
+            break;
+          case COLUMN_TYPE_DOUBLE_FLOAT:
+            value = new ColumnValue.DoubleFloatColumn(aggResult.getDoubleMax());
+            break;
+          default:
+            throw new RuntimeException("not supported type for max aggregation");
+        }
+        break;
+      default:
+        throw new RuntimeException("not supported aggregation operator");
+    }
+    columns.put(colName,value);
+    return new Row(vin,timestamp,columns);
+  }
+
+  public static int compareRows(Row r1,Row r2){
+    return (int)(r1.getTimestamp()-r2.getTimestamp());
   }
 
 }

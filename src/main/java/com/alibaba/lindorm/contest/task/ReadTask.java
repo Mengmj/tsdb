@@ -1,14 +1,14 @@
 package com.alibaba.lindorm.contest.task;
 
 import com.alibaba.lindorm.contest.CommonUtils;
+import com.alibaba.lindorm.contest.custom.DataFile;
 import com.alibaba.lindorm.contest.custom.FileKey;
-import com.alibaba.lindorm.contest.custom.MappedFile;
+import com.alibaba.lindorm.contest.custom.RawDataFile;
 import com.alibaba.lindorm.contest.manager.TSDBFileSystem;
 import com.alibaba.lindorm.contest.structs.Row;
 import com.alibaba.lindorm.contest.structs.Vin;
 
 import java.util.ArrayList;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
@@ -27,6 +27,7 @@ public class ReadTask implements Callable<ArrayList<Row>> {
         this.timeLowerBound = timeLowerBound;
         this.colNames = colNames;
     }
+
     @Override
     public ArrayList<Row> call() throws Exception {
         long beginPartition = CommonUtils.getPartition(timeLowerBound);
@@ -36,10 +37,10 @@ public class ReadTask implements Callable<ArrayList<Row>> {
             FileKey fileKey = FileKey.buildFromPartition(id,p);
             long lower = Math.max(CommonUtils.getPartitionBegin(p),timeLowerBound);
             long upper = Math.min(CommonUtils.getPartitionEnd(p),timeUpperBound);
-            MappedFile mappedFile = fileSystem.getMappedFile(fileKey,false);
-            if(mappedFile!=null){
-                ret.addAll(mappedFile.readRows(vin,id,colNames,lower,upper));
-                fileSystem.deRefFile(mappedFile);
+            DataFile dataFile = fileSystem.getDataFile(fileKey,false);
+            if(dataFile!=null){
+                ret.addAll(dataFile.readRows(vin,id,colNames,lower,upper));
+                fileSystem.derefFile(dataFile);
             }
         }
         return ret;

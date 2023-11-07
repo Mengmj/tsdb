@@ -1,8 +1,8 @@
 package com.alibaba.lindorm.contest;
 
 public class CommonUtils {
-    public static final int PARTITION_SECONDS = 60;
-    public static final int BUCKLE_SIZE = 256;
+    public static final int PARTITION_SECONDS = 3600;
+    public static final int BUCKLE_SIZE = 64;
     public static int getBuckle(int id){
         return id / BUCKLE_SIZE;
     }

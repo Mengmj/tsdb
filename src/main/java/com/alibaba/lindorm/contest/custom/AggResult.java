@@ -12,13 +12,17 @@ public class AggResult{
     private int invalid;
     private long intSum;
     private int intMax;
+    private int intMin;
     private double doubleSum;
     private double doubleMax;
+    private double doubleMin;
 
     private ColumnValue.ColumnType valueType;
     private AggResult(){
         intMax = Integer.MIN_VALUE;
+        intMin = Integer.MAX_VALUE;
         doubleMax = Double.NEGATIVE_INFINITY;
+        doubleMin = Double.POSITIVE_INFINITY;
     };
     public AggResult(ColumnValue.ColumnType valueType){
         this();
@@ -62,12 +66,14 @@ public class AggResult{
         count++;
         intSum += num;
         intMax = Math.max(num, intMax);
+        intMin = Math.min(num, intMin);
     }
     public void addDouble(double num){
         TestUtils.check(valueType== ColumnValue.ColumnType.COLUMN_TYPE_DOUBLE_FLOAT);
         count++;
         doubleSum += num;
         doubleMax = Math.max(num,doubleMax);
+        doubleMin = Math.min(num,doubleMin);
     }
 
     public void addInvalid(){
@@ -75,12 +81,13 @@ public class AggResult{
     }
 
     public AggResult merge(AggResult other){
-        TestUtils.check(valueType==other.valueType);
         count += other.count;
         intSum += other.intSum;
         intMax = Math.max(intMax,other.intMax);
+        intMin = Math.min(intMin,other.intMin);
         doubleSum += other.doubleSum;
         doubleMax = Math.max(doubleMax,other.doubleMax);
+        doubleMin = Math.min(doubleMin,other.doubleMin);
         invalid += other.invalid;
         return this;
     }
