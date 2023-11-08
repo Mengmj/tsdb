@@ -106,4 +106,26 @@ public class AggResult{
     public boolean isEmpty(){
         return invalid+count == 0;
     }
+
+    public ColumnValue.ColumnType getValueType(){
+        return valueType;
+    }
+
+    public static AggResult newIntAgg(int cnt, long sum,int min,int max){
+        AggResult aggResult = new AggResult(ColumnValue.ColumnType.COLUMN_TYPE_INTEGER);
+        aggResult.intSum = sum;
+        aggResult.intMin = min;
+        aggResult.intMax = max;
+        aggResult.count = cnt;
+        return aggResult;
+    }
+
+    public static AggResult newDoubleAgg(int cnt,double sum,double min,double max){
+        AggResult aggResult = new AggResult(ColumnValue.ColumnType.COLUMN_TYPE_DOUBLE_FLOAT);
+        aggResult.doubleSum = sum;
+        aggResult.doubleMin = min;
+        aggResult.doubleMax = max;
+        aggResult.count = cnt;
+        return aggResult;
+    }
 }

@@ -111,7 +111,7 @@ public class TSDBFileSystem {
                 }
                 refCount[next].set(1);
                 bufferIndex.put(file, next);
-                bufferPool[next] = TextSegDataFile.getInstance(file,fileKey, schema);
+                bufferPool[next] = SubPartDataFile.getInstance(file,fileKey, schema);
                 ret = bufferPool[next];
                 next = (next+1)%BUFFER_POOL_SIZE;
             }

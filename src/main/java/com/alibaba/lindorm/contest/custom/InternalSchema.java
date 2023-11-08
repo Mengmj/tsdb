@@ -10,6 +10,8 @@ import java.util.*;
  * 与Schema相比,InternalSchema中的列是有固定顺序的.支持序列化
  */
 public class InternalSchema implements Serializable {
+    public final static int INT_AGG_LEN = Long.BYTES + 2*Integer.BYTES;
+    public final static int DOUBLE_AGG_LEN = Double.BYTES * 3;
     private final Map<String, ColumnValue.ColumnType> columnTypeMap;
     private final Map<String, Integer> columnOffset;
     public final String[] colNames;
@@ -20,6 +22,7 @@ public class InternalSchema implements Serializable {
     public final int stringCount;
 
     public final int rawLength;
+    public final int aggLength;
 
     public final ArrayList<String> strColumns;
     public final ArrayList<String> numericColumns;
@@ -75,6 +78,9 @@ public class InternalSchema implements Serializable {
             }
         }
         rawLength = Byte.BYTES+Short.BYTES+intCount*Integer.BYTES+doubleCount*Double.BYTES+stringCount*(Integer.BYTES+Short.BYTES);
+
+        //          记录数         最高和最低时间戳   浮点数聚合           整数聚合
+        aggLength = Byte.BYTES + Long.BYTES * 2 + INT_AGG_LEN*intCount + DOUBLE_AGG_LEN*doubleCount;
     }
 
     public static InternalSchema build(Schema schema){
