@@ -3,7 +3,6 @@ package com.alibaba.lindorm.contest.task;
 import com.alibaba.lindorm.contest.CommonUtils;
 import com.alibaba.lindorm.contest.custom.DataFile;
 import com.alibaba.lindorm.contest.custom.FileKey;
-import com.alibaba.lindorm.contest.custom.RawDataFile;
 import com.alibaba.lindorm.contest.manager.TSDBFileSystem;
 import com.alibaba.lindorm.contest.structs.Row;
 import com.alibaba.lindorm.contest.structs.Vin;

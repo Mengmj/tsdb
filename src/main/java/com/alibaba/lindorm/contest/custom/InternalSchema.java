@@ -51,7 +51,7 @@ public class InternalSchema implements Serializable {
                     break;
                 case COLUMN_TYPE_STRING:
                     string_count++;
-                    offset+=2*Integer.BYTES;
+                    offset+=Integer.BYTES+Short.BYTES;
                     break;
             }
             ++i;
@@ -71,7 +71,7 @@ public class InternalSchema implements Serializable {
                 ++numIdx;
             }
         }
-        rawLength = Byte.BYTES+Short.BYTES+intCount*Integer.BYTES+doubleCount*Double.BYTES+stringCount*(2*Integer.BYTES);
+        rawLength = Byte.BYTES+Short.BYTES+intCount*Integer.BYTES+doubleCount*Double.BYTES+stringCount*(Integer.BYTES+Short.BYTES);
     }
 
     public static InternalSchema build(Schema schema){

@@ -47,7 +47,7 @@ public class TSDBFileSystem {
             tableName = loadFrom(nameFile);
         }
 
-        bufferPool = new RawDataFile[BUFFER_POOL_SIZE];
+        bufferPool = new DataFile[BUFFER_POOL_SIZE];
         refCount = new AtomicInteger[BUFFER_POOL_SIZE];
         bufferIndex = new ConcurrentHashMap<>();
         for(int i = 0;i < BUFFER_POOL_SIZE;++i){
@@ -111,7 +111,7 @@ public class TSDBFileSystem {
                 }
                 refCount[next].set(1);
                 bufferIndex.put(file, next);
-                bufferPool[next] = RawDataFile.getInstance(file,fileKey, schema);
+                bufferPool[next] = RowFirstDataFile.getInstance(file,fileKey, schema);
                 ret = bufferPool[next];
                 next = (next+1)%BUFFER_POOL_SIZE;
             }

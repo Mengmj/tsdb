@@ -6,7 +6,6 @@ import com.alibaba.lindorm.contest.structs.ColumnValue;
 import com.alibaba.lindorm.contest.structs.CompareExpression;
 import com.alibaba.lindorm.contest.structs.Row;
 import com.alibaba.lindorm.contest.structs.Vin;
-import com.alibaba.lindorm.contest.test.Counter;
 import com.alibaba.lindorm.contest.test.TestUtils;
 
 import java.io.File;
@@ -16,39 +15,64 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class MappedFile {
+public class TextSegDataFile extends DataFile{
     private static final int MAXIMUM_SIZE = 256 * 1024 * 1024;
-    private static final int HEADER_SIZE = 1024;
+    private static final int ID_TEXT_TAILS = 0+Integer.BYTES;
+    private static final int HEADER_SIZE = Integer.BYTES+Integer.BYTES*CommonUtils.BUCKLE_SIZE;
     private MappedByteBuffer mbb;
     private final int DATA_BEGIN = HEADER_SIZE;
     private final int DATA_END;
+    //文本数据区的起始地址
+    private final int TEXT_BEGIN_ADDR;
+
+    //文本数据区分段大小 128K
+    private final int TEXT_SEGMENT_SIZE = 128 * 1024;
     private final AtomicInteger textEnd;
-    private final InternalSchema schema;
-    public final long partition;
-    public final int buckle;
     private final RandomAccessFile randomAccessFile;
     private final FileChannel fc;
-    public final File file;
-    private MappedFile(File file,long partition,int buckle,InternalSchema schema){
+    private final AtomicInteger recordCount;
+    private final AtomicBoolean[] locks;
+    private final int[] textTails;
+    private TextSegDataFile(File file, long partition, int buckle, InternalSchema schema){
+        super(file,partition,buckle,schema);
+        DATA_END = HEADER_SIZE + CommonUtils.PARTITION_SECONDS * CommonUtils.BUCKLE_SIZE * schema.rawLength;
+        TEXT_BEGIN_ADDR = DATA_END;
+        recordCount = new AtomicInteger();
+        textEnd = new AtomicInteger();
+        locks = new AtomicBoolean[CommonUtils.BUCKLE_SIZE];
+        textTails = new int[CommonUtils.BUCKLE_SIZE];
+        for(int i = 0;i < locks.length;++i){
+            locks[i] = new AtomicBoolean(false);
+        }
         try{
-            this.file = file;
-            DATA_END = HEADER_SIZE + CommonUtils.PARTITION_SECONDS * CommonUtils.BUCKLE_SIZE * schema.rawLength;
             randomAccessFile = new RandomAccessFile(file,"rw");
             fc = randomAccessFile.getChannel();
-            textEnd = new AtomicInteger(Math.max(DATA_END,(int)fc.size()));
+            int prevSize = (int)fc.size();
+            boolean newFile = !file.exists()||prevSize==0;
             mbb = fc.map(FileChannel.MapMode.READ_WRITE,0,MAXIMUM_SIZE);
-            this.schema = schema;
-            this.partition = partition;
-            this.buckle = buckle;
+            if(newFile){
+                recordCount.set(0);
+                textEnd.set(DATA_END);
+
+            }else {
+                int cnt = mbb.getInt(0);
+                recordCount.set(cnt);
+                textEnd.set(prevSize);
+                for(int i = 0,addr = ID_TEXT_TAILS;i < CommonUtils.BUCKLE_SIZE;++i,addr+=Integer.BYTES){
+                    textTails[i] = mbb.getInt(addr);
+                }
+            }
+
         }catch (Exception e){
             throw new RuntimeException(e);
         }
 
     }
-    public static MappedFile getInstance(File file,FileKey fileKey,InternalSchema schema){
-        return new MappedFile(file,fileKey.partition,fileKey.buckle,schema);
+    public static TextSegDataFile getInstance(File file, FileKey fileKey, InternalSchema schema){
+        return new TextSegDataFile(file,fileKey.partition,fileKey.buckle,schema);
     }
 
     public void writeRows(List<RowWrapped> rows){
@@ -75,12 +99,12 @@ public class MappedFile {
                         break;
                     case COLUMN_TYPE_STRING:
                         ByteBuffer buffer = colValue.getStringValue();
-                        int strSize = buffer.remaining();
+                        short strSize = (short)buffer.remaining();
                         int strBegin = textEnd.getAndAdd(strSize);
                         mbb.putInt(offset,strBegin);
                         offset+=Integer.BYTES;
-                        mbb.putInt(offset,strSize);
-                        offset+=Integer.BYTES;
+                        mbb.putShort(offset,strSize);
+                        offset+=Short.BYTES;
                         while(buffer.remaining()>0){
                             mbb.put(strBegin, buffer.get());
                             strBegin++;
@@ -127,7 +151,7 @@ public class MappedFile {
                             break;
                         case COLUMN_TYPE_STRING:
                             int strBegin = mbb.getInt(rowBegin+offset);
-                            int strSize = mbb.getInt(rowBegin+offset+Integer.BYTES);
+                            short strSize = mbb.getShort(rowBegin+offset+Integer.BYTES);
                             byte[] bytes = new byte[strSize];
                             for(int i = 0;i < strSize;++i){
                                 bytes[i] = mbb.get(strBegin+i);
@@ -144,6 +168,10 @@ public class MappedFile {
     }
 
     public void close() throws IOException {
+        mbb.putInt(0,recordCount.get());
+        for(int i = 0,addr = ID_TEXT_TAILS;i < CommonUtils.BUCKLE_SIZE;++i,addr+=Integer.BYTES){
+            mbb.putInt(addr,i);
+        }
         mbb = null;
         fc.truncate(textEnd.get());
         fc.close();
@@ -318,20 +346,9 @@ public class MappedFile {
                 throw new RuntimeException("not supported agg op");
         }
     }
-
-    //测试用
-    public void writeBytes(int pos,byte[] bytes){
-        for(byte b: bytes){
-            mbb.put(pos,b);
-            pos++;
-        }
-    }
-    public void writeByte(int pos,byte b){
-        byte a = mbb.get(pos);
-        TestUtils.check(a==0 || a==b);
-        mbb.put(pos,b);
-    }
-    public byte readByte(int pos){
-        return mbb.get(pos);
+    private boolean sameTextSegment(int addr1,int addr2){
+        int seg1 = (addr1-TEXT_BEGIN_ADDR)/TEXT_SEGMENT_SIZE;
+        int seg2 = (addr2-TEXT_BEGIN_ADDR)/TEXT_SEGMENT_SIZE;
+        return seg1==seg2;
     }
 }

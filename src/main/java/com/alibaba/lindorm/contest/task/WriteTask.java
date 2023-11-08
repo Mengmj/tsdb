@@ -2,7 +2,6 @@ package com.alibaba.lindorm.contest.task;
 
 import com.alibaba.lindorm.contest.custom.DataFile;
 import com.alibaba.lindorm.contest.custom.FileKey;
-import com.alibaba.lindorm.contest.custom.RawDataFile;
 import com.alibaba.lindorm.contest.custom.RowWrapped;
 import com.alibaba.lindorm.contest.manager.TSDBFileSystem;
 

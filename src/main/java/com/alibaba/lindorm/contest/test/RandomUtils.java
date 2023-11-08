@@ -8,7 +8,7 @@ import com.alibaba.lindorm.contest.structs.Vin;
 import java.nio.ByteBuffer;
 import java.util.*;
 
-public class RandomUtils {
+public class RandomUtils extends Random{
     private Random random;
     public RandomUtils(){
         random = new Random(System.currentTimeMillis()+Thread.currentThread().getId()*2023);

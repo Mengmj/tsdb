@@ -16,14 +16,14 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class RawDataFile extends DataFile{
+public class ColumnFirstDataFile extends DataFile{
     private static final int MAXIMUM_SIZE = 256 * 1024 * 1024;
 
     private static final int ID_TEXT_TAILS = 0+Integer.BYTES;
-    private static final int HEADER_SIZE = 4*1024;
+    private static final int HEADER_SIZE = ID_TEXT_TAILS + CommonUtils.BUCKLE_SIZE * Integer.BYTES;
     //header后为各id各秒的有效标志位
     private static final int FLAG_BIT_MAP_BEGIN_ADDR = HEADER_SIZE;
-    private static final int FLAG_BIT_MAP_SIZE = CommonUtils.PARTITION_SECONDS * CommonUtils.BUCKLE_SIZE / 8;
+    private static final int FLAG_BIT_MAP_SIZE = CommonUtils.PARTITION_SECONDS * CommonUtils.BUCKLE_SIZE;
     //定长数据区起始地址
     private final int DATA_BEGIN_ADDR = FLAG_BIT_MAP_BEGIN_ADDR+FLAG_BIT_MAP_SIZE;
 
@@ -49,14 +49,16 @@ public class RawDataFile extends DataFile{
     private final AtomicBoolean[] locks;
     //各个id下一个字符串起始位置,为0说明未分配内存段
     private final int[] nextStringBeginAddr;
-    private RawDataFile(File file,long partition,int buckle,InternalSchema schema){
+
+    private final AtomicInteger recordCount;
+    private ColumnFirstDataFile(File file, long partition, int buckle, InternalSchema schema){
         super(file,partition,buckle,schema);
         locks = new AtomicBoolean[CommonUtils.BUCKLE_SIZE];
         for(int i = 0;i < CommonUtils.BUCKLE_SIZE;++i){
             locks[i] = new AtomicBoolean(false);
         }
         nextStringBeginAddr = new int[CommonUtils.BUCKLE_SIZE];
-
+        recordCount = new AtomicInteger(0);
         //每个id块起始位置为每秒标志位,其后为毫秒数
         int prevEnd = MILLIS_OFFSET + Short.BYTES * CommonUtils.PARTITION_SECONDS;
         columnOffsetMap = new HashMap<>();
@@ -87,6 +89,8 @@ public class RawDataFile extends DataFile{
             }else{
                 nextTextSegBegin = new AtomicInteger((int)fc.size());
                 //读取header中的信息
+                int cnt = mbb.getInt(0);
+                recordCount.set(cnt);
                 for(int addr = ID_TEXT_TAILS,i = 0;i < CommonUtils.BUCKLE_SIZE;++i,addr+=Integer.BYTES){
                     nextStringBeginAddr[i] = mbb.getInt(addr);
                 }
@@ -95,8 +99,8 @@ public class RawDataFile extends DataFile{
             throw new RuntimeException(e);
         }
     }
-    public static RawDataFile getInstance(File file,FileKey fileKey,InternalSchema schema){
-        return new RawDataFile(file,fileKey.partition,fileKey.buckle,schema);
+    public static ColumnFirstDataFile getInstance(File file, FileKey fileKey, InternalSchema schema){
+        return new ColumnFirstDataFile(file,fileKey.partition,fileKey.buckle,schema);
     }
 
     private int getSecond(long timestamp) {
@@ -128,8 +132,9 @@ public class RawDataFile extends DataFile{
                     setColumn(id,second,colName,value);
                 }
             }
-            setValidFlag(id,second);
             locks[no].set(false);
+            setValidFlag(id,second);
+            recordCount.incrementAndGet();
         }
     }
 
@@ -206,11 +211,7 @@ public class RawDataFile extends DataFile{
     private boolean getValidFlag(int id,int second){
         int no = id % CommonUtils.BUCKLE_SIZE;
         int seq = no * CommonUtils.PARTITION_SECONDS + second;
-        //在哪个字节
-        int byteIdx = seq / 8;
-        byte mask = (byte) (1 << (seq - byteIdx * 8));
-        byte b = mbb.get(FLAG_BIT_MAP_BEGIN_ADDR+byteIdx);
-        return (b & mask)!=0;
+        return mbb.get(FLAG_BIT_MAP_BEGIN_ADDR+seq) !=0 ;
     }
 
     /**
@@ -221,12 +222,7 @@ public class RawDataFile extends DataFile{
     private void setValidFlag(int id,int second){
         int no = id % CommonUtils.BUCKLE_SIZE;
         int seq = no * CommonUtils.PARTITION_SECONDS + second;
-        //在哪个字节
-        int byteIdx = seq / 8;
-        byte mask = (byte) (1 << (seq - byteIdx * 8));
-        byte b = mbb.get(FLAG_BIT_MAP_BEGIN_ADDR+byteIdx);
-        b |= mask;
-        mbb.put(FLAG_BIT_MAP_BEGIN_ADDR+byteIdx,b);
+        mbb.put(FLAG_BIT_MAP_BEGIN_ADDR+seq,(byte) 1);
     }
 
     private void setMillis(int id,long timestamp){
@@ -290,6 +286,7 @@ public class RawDataFile extends DataFile{
 
     public void close() throws IOException {
         //修改header中的信息
+        mbb.putInt(0,recordCount.get());
         for(int addr = ID_TEXT_TAILS,i = 0;i < CommonUtils.BUCKLE_SIZE;++i,addr+=Integer.BYTES){
             mbb.putInt(addr,nextStringBeginAddr[i]);
         }
@@ -334,7 +331,7 @@ public class RawDataFile extends DataFile{
                 secondList.add(second);
             }
         }
-        if(getValidFlag(id,lastSecond) && getTimestamp(id,lastSecond) < timeUpperBound){
+        if(lastSecond > firstSecond && getValidFlag(id,lastSecond) && getTimestamp(id,lastSecond) < timeUpperBound){
             secondList.add(lastSecond);
         }
         return secondList;

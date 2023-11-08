@@ -310,7 +310,7 @@ public class TSDBEngineImpl extends TSDBEngine {
   }
 
   private static Row filterColumns(Row row,Set<String> requested){
-    if(requested.isEmpty()){
+    if(requested==null||requested.isEmpty()){
       return row;
     }
     Map<String,ColumnValue> columes = row.getColumns();
