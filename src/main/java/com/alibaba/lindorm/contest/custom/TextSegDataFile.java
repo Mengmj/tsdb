@@ -84,34 +84,39 @@ public class TextSegDataFile extends DataFile{
             int offset = rowBegin+1;
             short milli = (short) (row.getTimestamp() % 1000);
             mbb.putShort(offset,milli);
-            offset+=Short.BYTES;
-            for(String colName:schema.colNames){
-                ColumnValue colValue = row.getColumns().get(colName);
-                ColumnValue.ColumnType colType = schema.getType(colName);
-                switch (colType){
+            for(String colName: schema.numericColumns){
+                ColumnValue value = row.getColumns().get(colName);
+                offset = schema.getOffset(colName);
+                switch (schema.getType(colName)){
                     case COLUMN_TYPE_INTEGER:
-                        mbb.putInt(offset,colValue.getIntegerValue());
-                        offset+=Integer.BYTES;
+                        mbb.putInt(rowBegin+offset, value.getIntegerValue());
                         break;
                     case COLUMN_TYPE_DOUBLE_FLOAT:
-                        mbb.putDouble(offset,colValue.getDoubleFloatValue());
-                        offset+=Double.BYTES;
+                        mbb.putDouble(rowBegin+offset, value.getDoubleFloatValue());
                         break;
-                    case COLUMN_TYPE_STRING:
-                        ByteBuffer buffer = colValue.getStringValue();
-                        short strSize = (short)buffer.remaining();
-                        int strBegin = textEnd.getAndAdd(strSize);
-                        mbb.putInt(offset,strBegin);
-                        offset+=Integer.BYTES;
-                        mbb.putShort(offset,strSize);
-                        offset+=Short.BYTES;
-                        while(buffer.remaining()>0){
-                            mbb.put(strBegin, buffer.get());
-                            strBegin++;
-                        }
+                    default:
+                        throw new RuntimeException("unexpected column type in numeric columns");
                 }
-                TestUtils.check(offset<=DATA_END);
             }
+            int no = id % CommonUtils.BUCKLE_SIZE;
+            while (locks[no].getAndSet(true));
+            for(String colName: schema.strColumns){
+                ByteBuffer buffer = row.getColumns().get(colName).getStringValue();
+                int addr = rowBegin+schema.getOffset(colName);
+                short size = (short) buffer.remaining();
+                int strAddr = textTails[no];
+                if(strAddr==0 || !sameTextSegment(strAddr,strAddr+size)){ //无可用空间或者空间不足
+                    strAddr = textEnd.getAndAdd(TEXT_SEGMENT_SIZE);
+                }
+                textTails[no] = strAddr+size;
+                mbb.putInt(addr,strAddr);
+                mbb.putShort(addr+Integer.BYTES,size);
+                while(buffer.remaining()>0){
+                    mbb.put(strAddr,buffer.get());
+                    strAddr++;
+                }
+            }
+            locks[no].set(false);
             mbb.put(rowBegin,(byte) 1);
         }
     }
@@ -170,7 +175,7 @@ public class TextSegDataFile extends DataFile{
     public void close() throws IOException {
         mbb.putInt(0,recordCount.get());
         for(int i = 0,addr = ID_TEXT_TAILS;i < CommonUtils.BUCKLE_SIZE;++i,addr+=Integer.BYTES){
-            mbb.putInt(addr,i);
+            mbb.putInt(addr,textTails[i]);
         }
         mbb = null;
         fc.truncate(textEnd.get());

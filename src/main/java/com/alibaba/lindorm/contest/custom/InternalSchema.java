@@ -4,9 +4,7 @@ import com.alibaba.lindorm.contest.structs.ColumnValue;
 import com.alibaba.lindorm.contest.structs.Schema;
 
 import java.io.Serializable;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * 与Schema相比,InternalSchema中的列是有固定顺序的.支持序列化
@@ -23,52 +21,57 @@ public class InternalSchema implements Serializable {
 
     public final int rawLength;
 
-    public final String[] strColumns;
-    public final String[] numericColumns;
+    public final ArrayList<String> strColumns;
+    public final ArrayList<String> numericColumns;
 
 
     private InternalSchema(Map<String, ColumnValue.ColumnType> columnTypeMap){
         this.columnTypeMap = columnTypeMap;
         columnOffset = new HashMap<>();
         columnCount = columnTypeMap.size();
-        colNames = new String[columnCount];
-        columnTypes = new ColumnValue.ColumnType[columnCount];
-        int offset = Byte.BYTES+Short.BYTES;
-        int i = 0;
+        numericColumns = new ArrayList<>();
+        strColumns = new ArrayList<>();
         int int_count = 0,double_count = 0,string_count = 0;
         for(var entry: columnTypeMap.entrySet()){
-            colNames[i] = entry.getKey();
-            columnTypes[i] = entry.getValue();
-            columnOffset.put(colNames[i],offset);
-            switch (columnTypes[i]){
+            String colName = entry.getKey();
+            ColumnValue.ColumnType colType = entry.getValue();
+            switch (colType){
                 case COLUMN_TYPE_INTEGER:
+                    numericColumns.add(colName);
                     int_count++;
-                    offset+=Integer.BYTES;
                     break;
                 case COLUMN_TYPE_DOUBLE_FLOAT:
+                    numericColumns.add(colName);
                     double_count++;
-                    offset+=Double.BYTES;
                     break;
                 case COLUMN_TYPE_STRING:
+                    strColumns.add(colName);
                     string_count++;
-                    offset+=Integer.BYTES+Short.BYTES;
                     break;
             }
-            ++i;
         }
         intCount = int_count;
         doubleCount = double_count;
         stringCount = string_count;
-        strColumns = new String[stringCount];
-        numericColumns = new String[intCount+doubleCount];
-        int strIdx = 0,numIdx = 0;
-        for(int j = 0;j < columnCount;++j){
-            if(columnTypes[j]== ColumnValue.ColumnType.COLUMN_TYPE_STRING){
-                strColumns[strIdx] = colNames[j];
-                ++strIdx;
-            }else {
-                numericColumns[numIdx] = colNames[j];
-                ++numIdx;
+        List<String> colNamesList = new ArrayList<>();
+        colNamesList.addAll(numericColumns);
+        colNamesList.addAll(strColumns);
+        colNames = colNamesList.toArray(new String[0]);
+        columnTypes = new ColumnValue.ColumnType[colNames.length];
+        int offset = Byte.BYTES + Short.BYTES;
+        for(int i = 0;i < colNames.length;++i){
+            columnTypes[i] = columnTypeMap.get(colNames[i]);
+            columnOffset.put(colNames[i],offset);
+            switch (columnTypes[i]){
+                case COLUMN_TYPE_INTEGER:
+                    offset+=Integer.BYTES;
+                    break;
+                case COLUMN_TYPE_DOUBLE_FLOAT:
+                    offset += Double.BYTES;
+                    break;
+                case COLUMN_TYPE_STRING:
+                    offset += Integer.BYTES + Short.BYTES;
+                    break;
             }
         }
         rawLength = Byte.BYTES+Short.BYTES+intCount*Integer.BYTES+doubleCount*Double.BYTES+stringCount*(Integer.BYTES+Short.BYTES);
