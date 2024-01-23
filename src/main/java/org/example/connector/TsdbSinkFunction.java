@@ -19,14 +19,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class FlinkTsdbSinkFunction extends RichSinkFunction<RowData> {
+public class TsdbSinkFunction extends RichSinkFunction<RowData> {
     private TSDBEngine tsdb;
     private final String dbPath;
     private final String dbTable;
     private final List<LogicalType> parsingTypes;
     private final List<String> fieldNames;
 
-    public FlinkTsdbSinkFunction(String dbPath, String dbTable, DataType rowType) {
+    public TsdbSinkFunction(String dbPath, String dbTable, DataType rowType) {
         this.dbPath = dbPath;
         this.dbTable = dbTable;
         this.parsingTypes = rowType.getLogicalType().getChildren();
@@ -77,6 +77,7 @@ public class FlinkTsdbSinkFunction extends RichSinkFunction<RowData> {
             }
         }
         Row row = new Row(vin, timestamp, columns);
+        System.out.println(row);
         List<Row> rows = new ArrayList<>();
         rows.add(row);
         WriteRequest writeRequest = new WriteRequest(dbTable, rows);

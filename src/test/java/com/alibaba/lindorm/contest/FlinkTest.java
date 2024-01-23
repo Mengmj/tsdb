@@ -8,13 +8,13 @@ import java.util.*;
 public class FlinkTest {
     public static void main(String[] args) throws Exception{
         //连接数据库
-        File dataPath = new File("/data/home/mingjinmeng/playground/test_data/flink-test");
+        File dataPath = new File("/Users/meng/playground/test_data");
         TSDBEngine db = new TSDBEngineImpl(dataPath);
         db.connect();
 
         //建表
         String tableName = "table0";
-        // createTable(db);
+        // createTable(db, tableName);
         String vinStr = "abcdefghijklmnopq";
         byte[] bytes = vinStr.getBytes();
         System.out.println(bytes.length);

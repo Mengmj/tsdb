@@ -1,10 +1,12 @@
 package org.example.connector;
 
+import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.connector.sink.DynamicTableSink;
 import org.apache.flink.table.connector.source.DynamicTableSource;
+import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.factories.DynamicTableSinkFactory;
 
 import java.util.HashSet;
@@ -14,7 +16,7 @@ import org.apache.flink.table.factories.DynamicTableSourceFactory;
 import org.apache.flink.table.factories.FactoryUtil;
 import org.apache.flink.table.types.DataType;
 
-public class FlinkTsdbTableFactory implements DynamicTableSinkFactory, DynamicTableSourceFactory {
+public class TsdbTableFactory implements DynamicTableSinkFactory, DynamicTableSourceFactory {
 
     static final String FACTORY_IDENTIFIER = "tsdb";
 
@@ -34,7 +36,7 @@ public class FlinkTsdbTableFactory implements DynamicTableSinkFactory, DynamicTa
         String dbPath = options.get(DB_PATH);
         String dbTable = options.get(DB_TABLE);
         DataType rowType = context.getCatalogTable().getResolvedSchema().toPhysicalRowDataType();
-        return new FlinkTsdbSink(dbPath, dbTable, rowType);
+        return new TsdbSink(dbPath, dbTable, rowType);
     }
 
     @Override
@@ -57,6 +59,13 @@ public class FlinkTsdbTableFactory implements DynamicTableSinkFactory, DynamicTa
 
     @Override
     public DynamicTableSource createDynamicTableSource(Context context) {
-        return null;
+        final FactoryUtil.TableFactoryHelper helper = FactoryUtil.createTableFactoryHelper(this, context);
+        helper.validate();
+
+        final ReadableConfig options = helper.getOptions();
+        String dbPath = options.get(DB_PATH);
+        String dbTable = options.get(DB_TABLE);
+        DataType rowType = context.getCatalogTable().getResolvedSchema().toPhysicalRowDataType();
+        return new TsdbSource(dbPath, dbTable, rowType);
     }
 }
