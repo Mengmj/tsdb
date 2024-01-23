@@ -11,7 +11,7 @@ import java.util.*;
 
 public class TestUtils {
 
-    public static final File TEST_DIR = new File("/Users/meng/playground/testdir");
+    public static final File TEST_DIR = new File("/data/home/mingjinmeng/playground/test_data");
     public static final Schema TEST_SCHEMA;
     static {
         SortedMap<String, ColumnValue.ColumnType> columnTypeMap = new TreeMap<>();
